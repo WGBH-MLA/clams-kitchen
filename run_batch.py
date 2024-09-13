@@ -60,7 +60,7 @@ def write_batch_results_log(cf, batch_l, item_count):
     # Only write out records that have been reached so far
 
     # Results files get a new name every time this script is run
-    batch_results_log_file_base = cf["logs_dir"] + "/" + cf["batch_name"] + "_" + cf["start_timestamp"] + "_runlog"
+    batch_results_log_file_base = cf["logs_dir"] + "/" + cf["batch_id"] + "_" + cf["start_timestamp"] + "_runlog"
     batch_results_log_csv_path  = batch_results_log_file_base + ".csv"
     batch_results_log_json_path  = batch_results_log_file_base + ".json"
 
