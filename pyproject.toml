@@ -1,0 +1,25 @@
+[project]
+name = "clams-kitchen"
+version = "0.1.0"
+description = "CLAMS kitchen"
+authors = [
+    { name = "Owen King", email = "owen_king@wgbh.org" },
+    { name = "Harpo Harbert", email = "ryan_harbert@wgbh.org" },
+]
+dependencies = [
+    "requests~=2.32",
+    "av~=13.0",
+    "pandas~=2.2",
+    "pillow~=10.4",
+    "mmif-python>=1.0.19",
+]
+requires-python = ">=3.12,<4.0"
+readme = "README.md"
+license = { text = "MIT" }
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
