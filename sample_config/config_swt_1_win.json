@@ -1,6 +1,8 @@
 {
   "id": "SWT-example1",
   "name": "SWT example batch run 1",
+  "local_base": "C:/Users/owen",
+  "mnt_base": "/mnt/c/Users/owen",
   "results_dir": "/data/kitchen_output",
   "def_path": "/data/clams-kitchen/sample_config/unrestricted_batch.csv",
   "media_dir": "/data/batchmedia",

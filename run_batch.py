@@ -1,34 +1,9 @@
 """
 run_batch.py
 
-# Overview
-
 This script runs CLAMS applications against a batch of assets by looping through 
-the items in the batch, taking several steps with each one.  For each item, the 
-script performs the following steps:
-  - downloading the asset from SonyCi
-  - creating a "blank" MMIF file for the asset
-  - running a CLAMS app to create data-laden MMIF
-  - performing post-processing on the data-laden MMIF to create useful output
-  - cleaning up (removing) downloaded media
+the items in the batch, taking several steps with each one.  
 
-# Configuration
-
-The script depends on a configuration file which specifies all the parameters and
-options. One required parameter `def_path` specifies a CSV file that defines the
-batch as a list of items with identifiers and SonyCi IDs.
-
-# Limitations
-
-The configuration files support running multiple CLAMS apps on a single item, but
-this is not yet implemented.  It would require adding another inner loop, which is 
-straightforward.
-
-This script works with CLAMS apps running in CLI mode or as web services.  However,
-support for web services is more difficult and may be dropped.  One problem with 
-using apps running as web services is that if the app fails, the script does not
-have a way to restart the web service.  Also, complex parameters, like the 'map' 
-parameter of SWT does not work for web-service mode.
 """
 # %%
 # Import modules
@@ -103,8 +78,34 @@ parser = parser = argparse.ArgumentParser(
 )
 parser.add_argument("batch_conf_path", metavar="CONFIG",
     help="Path and filename for the JSON configuration file")
+parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
+    help="Path and filename for the CSV file defining the list of items to be processed")
+parser.add_argument("batch_id", metavar="BATCHID", nargs="?",
+    help="An identifer string for the batch; no spaces allowed")
+parser.add_argument("batch_name", metavar="BATCHNAME", nargs="?",
+    help="A human-readable name for the batch; may include spaces; not valid without a BATCHID")
 
-batch_conf_path = parser.parse_args().batch_conf_path
+args = parser.parse_args()
+
+batch_conf_path = args.batch_conf_path
+
+if args.batch_def_path is not None:
+    cli_batch_def_path = args.batch_def_path
+else:
+    cli_batch_def_path = None
+
+if args.batch_id is not None:
+    cli_batch_id = args.batch_id
+    
+    if args.batch_name is not None:
+        cli_batch_name = args.batch_name
+    else:
+        cli_batch_name = cli_batch_id
+else:
+    cli_batch_id = None
+    cli_batch_name = None
+
+
 
 # %%
 # A hard-coded batch config filename will replace one from the command line
@@ -129,37 +130,23 @@ t0 = datetime.datetime.now()
 cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
 
 try: 
-    cf["batch_id"] = conffile["id"] # required
 
-    if "name" in conffile:
+    if cli_batch_id is not None:
+        cf["batch_id"] = cli_batch_id
+    else:
+        # This is required to be in the config file if it is not on the command line
+        if "id" in conffile:
+            cf["batch_id"] = conffile["id"] 
+        else:
+            raise RuntimeError("No batch ID specified on commandline or in config file.") 
+
+
+    if cli_batch_name is not None:
+        cf["batch_name"] = cli_batch_name
+    elif "name" in conffile:
         cf["batch_name"] = conffile["name"]
     else:
         cf["batch_name"] = cf["batch_id"]
-
-
-    # CLAMS config
-
-    if "clams_run_cli" in conffile:
-        clams_run_cli = conffile["clams_run_cli"]
-    else:
-        clams_run_cli = False
-    
-    if not clams_run_cli:
-        # need to know the URLs of the webservices if (but only if) not running
-        # in CLI mode
-        clams_endpoints = conffile["clams_endpoints"]
-
-    if clams_run_cli:
-        # need to know the docker image if (but only if) running in CLI mode
-        clams_images = conffile["clams_images"]
-    else:
-        # ignore clams_images if not running in CLI mode
-        clams_images = ""
-
-    if "clams_params" in conffile:
-        clams_params = conffile["clams_params"]
-    else:
-        clams_params = []
 
 
     # Paths and directories 
@@ -174,14 +161,22 @@ try:
     else:
         local_base = ""
 
+    if cli_batch_def_path is not None:
+        batch_def_path = cli_batch_def_path
+    else:
+        #  "def_path" is required if not specified on the command line
+        batch_def_path = local_base + conffile["def_path"]
+
     if "mnt_base" in conffile:
         mnt_base = conffile["mnt_base"]
     else:
-        mnt_base = ""
+        mnt_base = local_base
 
+    # "results_dir" is required
     results_dir = local_base + conffile["results_dir"]
     mnt_results_dir = mnt_base + conffile["results_dir"]
     
+    # "media_dir" is required
     media_dir = local_base + conffile["media_dir"]
     mnt_media_dir = mnt_base + conffile["media_dir"]
 
@@ -197,8 +192,6 @@ try:
         cf["logs_dir"] = local_base + conffile["logs_dir"]
     else:
         cf["logs_dir"] = results_dir
-
-    batch_def_path = local_base + conffile["def_path"]
 
     # Checks to make sure directories and setup file exist
     for dirpath in [results_dir, cf["logs_dir"], media_dir, batch_def_path]:
@@ -231,7 +224,7 @@ try:
     if "cleanup_media_per_item" in conffile:
         cf["cleanup_media_per_item"] = conffile["cleanup_media_per_item"]
     else:
-        cf["cleanup_media_per_item"] = True
+        cf["cleanup_media_per_item"] = False
     
     if "cleanup_beyond_item" in conffile:
         cf["cleanup_beyond_item"] = conffile["cleanup_beyond_item"]
@@ -242,6 +235,31 @@ try:
         warnings.filterwarnings(conffile["filter_warnings"])
     else:
         warnings.filterwarnings("ignore")
+
+
+    # CLAMS config
+
+    if "clams_run_cli" in conffile:
+        clams_run_cli = conffile["clams_run_cli"]
+    else:
+        clams_run_cli = True
+    
+    if not clams_run_cli:
+        # need to know the URLs of the webservices if (but only if) not running
+        # in CLI mode
+        clams_endpoints = conffile["clams_endpoints"]
+
+    if clams_run_cli:
+        # need to know the docker image if (but only if) running in CLI mode
+        clams_images = conffile["clams_images"]
+    else:
+        # ignore clams_images if not running in CLI mode
+        clams_images = ""
+
+    if "clams_params" in conffile:
+        clams_params = conffile["clams_params"]
+    else:
+        clams_params = []
 
 
     # Post-processing configuration options
@@ -272,6 +290,11 @@ except KeyError as e:
 except FileNotFoundError as e:
     print("Required directory or file not found")
     print("File not found error:", e)
+    raise SystemExit
+
+except RuntimeError as e:
+    print("Failed to configure batch")
+    print("Runtime Error:", e)
     raise SystemExit
 
 
