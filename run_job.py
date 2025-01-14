@@ -57,7 +57,7 @@ import subprocess
 import argparse
 import requests
 
-import visaid_procs.post_proc_item
+import visaid_builder.post_proc_item
 
 from drawer.media_availability import check_avail, make_avail, remove_media
 from drawer.mmif_adjunct import make_blank_mmif, mmif_check
@@ -780,7 +780,7 @@ for item in batch_l:
 
         # Call separate procedure for appropraite post-processing
         if post_proc["name"].lower() == "swt" :
-            visaid_procs.post_proc_item.run_post(item=item, 
+            visaid_builder.post_proc_item.run_post(item=item, 
                cf=cf,
                post_proc=post_proc, 
                mmif_path=item["mmif_paths"][mmifi])
