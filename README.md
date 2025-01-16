@@ -10,13 +10,14 @@ The `run_job.py` script runs CLAMS applications against a batch of assets by loo
   - performing post-processing on the data-laden MMIF to create useful output
   - cleaning up (removing) downloaded media
 
-The `visaid_procs/process_swt.py` module includes functions for processing MMIF produced by the [CLAMS swt-detection app](https://github.com/clamsproject/app-swt-detection).
+Currently, the only post-processing routines that have been defined are associated with the creation of visual indexes ("visaids") for video files, as performed by the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder).  
 
-The `visaid_procs/post_proc_item` module includes functions called by `run_job.py` and calls functions in `visaid_procs/process_swt.py` to perform postprocessing on MMIF produced by swt-detection.
 
 ## Installation
 
-Clone the repository.  Change to the repository directory and do a `pip install -r requirements.txt`.
+Clone this repository.  Change to the repository directory and do a `pip install -r requirements.txt`.
+
+To use these routines in the CLAMS kitchen, clone the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) project inside the `clams-kitchen` root folder.  Then install additional requirements by doing `pip install -r visaid_builder/requirements.txt`.
 
 
 ## Usage
