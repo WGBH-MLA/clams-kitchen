@@ -37,6 +37,7 @@ following keys:
    - asset_id (str)
    - batch_item (int)
    - skip_reason (str)
+   - errors (list of str)
    - media_filename (str)
    - media_path (str)
    - mmif_files (list of str)
@@ -422,6 +423,7 @@ for item in batch_l:
     # initialize new dictionary elements for this item
     item["batch_item"] = item_count
     item["skip_reason"] = ""
+    item["errors"] = []
     item["media_filename"] = ""
     item["media_path"] = ""
     item["mmif_files"] = []
@@ -779,11 +781,18 @@ for item in batch_l:
 
 
         # Call separate procedure for appropraite post-processing
-        if post_proc["name"].lower() == "swt" :
-            visaid_builder.post_proc_item.run_post(item=item, 
+        if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
+            pp_errors = visaid_builder.post_proc_item.run_post(
+               item=item, 
                cf=cf,
                post_proc=post_proc, 
-               mmif_path=item["mmif_paths"][mmifi])
+               mmif_path=item["mmif_paths"][mmifi] )
+
+            if pp_errors not in [ None, [] ]:
+                print("Warning:", post_proc["name"], "returned errors:", pp_errors)
+                item["errors"] += pp_errors
+                print("PROCEEDING.")
+
         else:
             print("Invalid postprocessing procedure:", post_proc)
 
@@ -814,13 +823,15 @@ for item in batch_l:
 tn = datetime.datetime.now()
 
 num_skips = len( [item for item in batch_l if item["skip_reason"] != ""] )
+num_errors = len( [item for item in batch_l if len(item["errors"]) > 0 ] )
 
 print()
 print("****************************")
 print()
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print("Skipped", num_skips, "items, out of", len(batch_l), "total items.")
+print(num_skips, "out of", len(batch_l), "total items were skipped.")
+print(num_errors, "out of", len(batch_l), "total items had errors.")
 print("Results logged in", cf["logs_dir"])
 print()
 
