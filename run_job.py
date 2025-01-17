@@ -803,8 +803,7 @@ for item in batch_l:
                     pp_errors = visaid_builder.post_proc_item.run_post(
                         item=item, 
                         cf=cf,
-                        post_proc=post_proc, 
-                        mmif_path=item["mmif_paths"][mmifi] )
+                        post_proc=post_proc )
 
                     if pp_errors not in [ None, [] ]:
                         print("Warning:", post_proc["name"], "returned errors:", pp_errors)
