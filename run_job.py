@@ -30,6 +30,14 @@ are calculated at the beginning of the job.  It has the following keys:
 `clams_params` - a list of dictionaries of parameter values for CLAMS apps 
 
 `post_proc` - a dictionary with the parameters for the post-processing routine
+   or
+`post_procs` - a list of dictionaries like `post_proc`
+
+It is expected that each `post_proc` dictionary will contain at, at least, keys
+for "name" of the postprocess which has a string value (e.g., "visaid_builder") 
+and "artifacts" of the postprocess, a list of strings indicatinng the artifacts
+to be produced (e.g., "slate").  In addition, the `post_proc` dict declares the 
+options and parameters specific to the relevant postprocess.
 
 `batch_l` - a list of items in the batch.  Each item is a dictionary with keys set
 by the columns of the batch definition list CSV file.  In addition, it includes the
@@ -165,7 +173,6 @@ with open(job_conf_path, "r") as jsonfile:
 # Dictionaries to store configuation information for this job
 # These will be based on the conffile dictionary, but checked and normalized
 cf = {}
-post_proc = {}
 
 t0 = datetime.datetime.now()
 cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
@@ -325,20 +332,23 @@ try:
     # Post-processing configuration options
 
     if "post_proc" in conffile:
-        post_proc = conffile["post_proc"]
-
-        if "name" not in post_proc:
-            post_proc["name"] = ""
+        # just one post process
+        if not isinstance( conffile["post_proc"], dict):
+            raise RuntimeError("Value for `post_proc` must be a dict.")
+        post_procs = [ conffile["post_proc"] ]
+    elif "post_procs" in conffile:
+        # list of post processes defined in conffile
+        if not isinstance( conffile["post_procs"], list):
+            raise RuntimeError("Value for `post_procs` must be a list.")
+        post_procs = conffile["post_procs"] 
     else:
-        post_proc = {}
+        post_procs = []
 
-    if "artifacts" in post_proc:
+    if len(post_procs) > 0:
         # directory for all artifacts (not including MMIF files)
         cf["artifacts_dir"] = results_dir + "/" + "artifacts"
     else:
-        post_proc["name"] = ""
-        post_proc["artifacts"] = []
-        cf["artifacts_dir"] = ""
+        cf["artifacts_dir"] = None
 
 except KeyError as e:
     print("Invalid configuration file at", job_conf_path)
@@ -360,16 +370,17 @@ except RuntimeError as e:
 # Check and/or create directories for job output
 
 # Create list of dirs to create/validate
-dirs = [mmif_dir]
+dirs = [ mmif_dir ]
 
-if len(post_proc["artifacts"]) > 0:
-
+if cf["artifacts_dir"]:
     dirs.append(cf["artifacts_dir"])
-    
-    # subdirectories for types of artifacts
-    for arttype in post_proc["artifacts"]:
-        artdir = cf["artifacts_dir"] + "/" + arttype
-        dirs.append(artdir)
+
+    for post_proc in post_procs:
+        if "artifacts" in post_proc and len(post_proc["artifacts"]) > 0:
+            # subdirectories for types of artifacts
+            for arttype in post_proc["artifacts"]:
+                artdir = cf["artifacts_dir"] + "/" + arttype
+                dirs.append(artdir)
 
 # Checks to make sure these directories exist
 # If directories do not exist, then create them
@@ -760,41 +771,48 @@ for item in batch_l:
     print()
     print("# POSTPROCESSING ANNOTATION-LADEN MMIF")
 
-    if post_proc["name"] == "" :
-        print("No postprocessing procedure named.  Will not postprocess.")
+    if len(post_procs) == 0:
+        print("No postprocessing procedures requested.  Will not postprocess.")
 
     else:
-        print("Will attempt to run postprocessing procedure:", post_proc["name"])
-        # Check for prereqs
-        mmif_status = mmif_check(item["mmif_paths"][mmifi])
-        if ('laden' not in mmif_status or 'error-views' in mmif_status):
-            # prereqs not satisfied
-            # print error messages, updated results, continue to next loop iteration
-            mmif_check(mmif_path, complain=True)
-            print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
-            print("SKIPPING", item["asset_id"])
-            item["skip_reason"] = "usemmif-prereq"
-            write_job_results_log(cf, batch_l, item_count)
-            continue
-        else:
-            print("Step prerequisites passed.")
+        # run each post processing procedure that has been defined.
+        for post_proc in post_procs:
+        
+            if "name" not in post_proc:
+                print("Postprocessing procedure not named.  Will not attempt.")
+            else:
+                print("Will attempt to run postprocessing procedure:", post_proc["name"])
+                # Check for prereqs
+                mmif_status = mmif_check(item["mmif_paths"][mmifi])
+                if ('laden' not in mmif_status or 'error-views' in mmif_status):
+                    # prereqs not satisfied
+                    # print error messages, updated results, continue to next loop iteration
+                    mmif_check(mmif_path, complain=True)
+                    print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
+                    print("SKIPPING", item["asset_id"])
+                    item["skip_reason"] = "usemmif-prereq"
+                    write_job_results_log(cf, batch_l, item_count)
+                    continue
+                else:
+                    print("Step prerequisites passed.")
 
 
-        # Call separate procedure for appropraite post-processing
-        if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
-            pp_errors = visaid_builder.post_proc_item.run_post(
-               item=item, 
-               cf=cf,
-               post_proc=post_proc, 
-               mmif_path=item["mmif_paths"][mmifi] )
+                # Call separate procedure for appropraite post-processing
+                if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
-            if pp_errors not in [ None, [] ]:
-                print("Warning:", post_proc["name"], "returned errors:", pp_errors)
-                item["errors"] += pp_errors
-                print("PROCEEDING.")
+                    pp_errors = visaid_builder.post_proc_item.run_post(
+                        item=item, 
+                        cf=cf,
+                        post_proc=post_proc, 
+                        mmif_path=item["mmif_paths"][mmifi] )
 
-        else:
-            print("Invalid postprocessing procedure:", post_proc)
+                    if pp_errors not in [ None, [] ]:
+                        print("Warning:", post_proc["name"], "returned errors:", pp_errors)
+                        item["errors"] += pp_errors
+                        print("PROCEEDING.")
+
+                else:
+                    print("Invalid postprocessing procedure:", post_proc)
 
 
     ########################################################
