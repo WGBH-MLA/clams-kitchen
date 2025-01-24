@@ -307,23 +307,24 @@ try:
 
     if cf["just_get_media"]:
         num_clams_stages = 0
-        clams_endpoints = clams_images = []
-    elif not clams_run_cli:
-        # need to know the URLs of the webservices if (but only if) not running
-        # in CLI mode 
-        clams_endpoints = conffile["clams_endpoints"]
-        clams_images = []
-        num_clams_stages = len(clams_endpoints)
+        clams_endpoints = clams_images = clams_params = []
     else:
-        # need to know the docker image if (but only if) running in CLI mode
-        clams_images = conffile["clams_images"]
-        clams_endpoints = []
-        num_clams_stages = len(clams_images)
+        if not clams_run_cli:
+            # need to know the URLs of the webservices if (but only if) not running
+            # in CLI mode 
+            clams_endpoints = conffile["clams_endpoints"]
+            clams_images = []
+            num_clams_stages = len(clams_endpoints)
+        else:
+            # need to know the docker image if (but only if) running in CLI mode
+            clams_images = conffile["clams_images"]
+            clams_endpoints = []
+            num_clams_stages = len(clams_images)
 
-    if "clams_params" in conffile:
-        clams_params = conffile["clams_params"]
-    else:
-        clams_params = []
+        if "clams_params" in conffile:
+            clams_params = conffile["clams_params"]
+        else:
+            clams_params = []
 
     if len(clams_params) != num_clams_stages:
         raise RuntimeError("Number of CLAMS stages not equal to number of sets of CLAMS params.") 
@@ -803,7 +804,7 @@ for item in batch_l:
                     pp_errors = visaid_builder.post_proc_item.run_post(
                         item=item, 
                         cf=cf,
-                        post_proc=post_proc )
+                        params=post_proc )
 
                     if pp_errors not in [ None, [] ]:
                         print("Warning:", post_proc["name"], "returned errors:", pp_errors)
