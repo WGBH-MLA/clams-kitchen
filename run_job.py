@@ -164,6 +164,11 @@ cli_just_get_media = args.just_get_media
 
 ########################################################
 # %%
+#
+# Process info in the job config file to set up this job.
+# 
+print()
+print("Setting up job...")
 print()
 
 # Set job-specific configuration based on values in configuration file
@@ -177,6 +182,9 @@ cf = {}
 t0 = datetime.datetime.now()
 cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
 
+# Wrap everything in a big `try` block.  We'll catch some more likely errors, and try
+# to exit gracefully.  (However, the error checking here is not intended to be 
+# especially robust.)
 try: 
 
     if cli_job_id is not None:
@@ -188,14 +196,12 @@ try:
         else:
             raise RuntimeError("No job ID specified on commandline or in config file.") 
 
-
     if cli_job_name is not None:
         cf["job_name"] = cli_job_name
     elif "name" in conffile:
         cf["job_name"] = conffile["name"]
     else:
         cf["job_name"] = cf["job_id"]
-
 
     # Paths and directories 
 
@@ -407,10 +413,25 @@ batch_l = []
 with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
     batch_l = list(csv.DictReader(csvfile))
 
+# Re-set last item according to the length of the batch list
+if cf["end_after_item"] is None:
+    cf["end_after_item"] = len(batch_l)
+elif cf["end_after_item"] < cf["start_after_item"]:
+    cf["end_after_item"] = cf["start_after_item"]
+elif cf["end_after_item"] > len(batch_l):
+    cf["end_after_item"] = len(batch_l)
+
 # restrict to the appropriate subset
 batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
 
+# Human-readable intuitive index of which item we're working on
+# (First item has item_count==1, not 0.)
 item_count = cf["start_after_item"]
+
+print()
+print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
+print(f'Job comprises {len(batch_l)} items.')
+print("Commencing job...")
 
 # Main loop
 for item in batch_l:
@@ -421,11 +442,13 @@ for item in batch_l:
     item_count += 1
     print()
     print()
-    print(" * ")
-    print("*** ITEM #", item_count, ":", item["asset_id"], "[", cf["job_name"], "]", tis)
-    print(" * ")
+    print("  *  ")
+    #print("*** ITEM #", item_count, ":", item["asset_id"], "[", cf["job_name"], "]", tis)
+    print(f'* * *  ITEM # {item_count} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
+    print("  *  ")
 
     ########################################################
+    # Initialize attributes for this item
 
     # set default value for `media_type` if this is not supplied
     if "media_type" not in item:
