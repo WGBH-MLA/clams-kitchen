@@ -23,6 +23,8 @@ are calculated at the beginning of the job.  It has the following keys:
 
 `clams_run_cli` - bool indicating whether to run CLAMS apps as CLI or web service   
 
+`clams_run_cli_gpu` - bool indicating whether to call Docker with GPU (cuda) enabled
+
 `clams_endpoints` - a list of URLS for web service endpoints for CLAMS apps
 
 `clams_images` - a list of names for Docker images for CLAMS apps 
@@ -310,6 +312,11 @@ try:
         clams_run_cli = False
     else:
         clams_run_cli = True
+    
+    if "clams_run_cli_gpu" in conffile:
+        clams_run_cli_gpu = conffile["clams_run_cli_gpu"]
+    else:
+        clams_run_cli_gpu = False
 
     if cf["just_get_media"]:
         num_clams_stages = 0
@@ -722,14 +729,17 @@ for item in batch_l:
                         "-v",
                         mnt_mmif_dir + '/:/mmif',
                         "-i",
-                        "--rm",
+                        "--rm"
+                    ]
+                if clams_run_cli_gpu:
+                    coml += [ "--gpus", "all" ]
+                coml += [
                         clams_images[clamsi],
                         "python",
                         "cli.py"
                     ]
-
                 coml = coml_prefix + coml
-
+    
                 # If there are parameters, add them to the command list
                 if len(clams_params[clamsi]) > 0:
                     app_params = []
@@ -755,8 +765,8 @@ for item in batch_l:
                 coml.append("/mmif/" + input_mmif_filename)
                 coml.append("/mmif/" + output_mmif_filename)
 
-                # print(coml) # DIAG
-                # print( " ".join(coml) ) # DIAG
+                #print(coml) # DIAG
+                #print( " ".join(coml) ) # DIAG
 
                 # actually run the CLAMS app
                 result = subprocess.run(coml, capture_output=True, text=True)
