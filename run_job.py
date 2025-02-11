@@ -285,7 +285,9 @@ try:
         cf["end_after_item"] = None
 
     if "include_only_items" in conffile:
-        cf["include_only_items"] = conffile["include_only_items"]
+        beg = cf["start_after_item"] if cf["start_after_item"] else 0
+        end = cf["end_after_item"] if cf["end_after_item"] else 999999
+        cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
     else:
         cf["include_only_items"] = None
 
@@ -879,13 +881,20 @@ tn = datetime.datetime.now()
 num_skips = len( [item for item in batch_l if item["skip_reason"] not in ["", "noninclusion"]] )
 num_errors = len( [item for item in batch_l if len(item["errors"]) > 0 ] )
 
+if cf["include_only_items"]:
+    total_included_items = len( cf["include_only_items"] )
+else:
+    total_included_items = len(batch_l)
+
+total_items = len(batch_l)
+
 print()
 print("****************************")
 print()
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print(num_skips, "out of", len(batch_l), "included items were skipped.")
-print(num_errors, "out of", len(batch_l), "total items had errors.")
+print(num_skips, "out of", total_included_items, "included items were skipped.")
+print(num_errors, "out of", total_items, "total items had errors.")
 print(f'Results logged in {cf["logs_dir"]}/')
 print()
 
