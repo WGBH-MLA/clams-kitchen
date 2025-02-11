@@ -16,6 +16,7 @@ are calculated at the beginning of the job.  It has the following keys:
    - just_get_media (bool)
    - start_after_item (int)
    - end_after_item (int)
+   - include_only_items (list of ints)
    - overwrite_mmif (bool)
    - cleanup_media_per_item (bool)
    - cleanup_beyond_item (int)
@@ -31,15 +32,13 @@ are calculated at the beginning of the job.  It has the following keys:
 
 `clams_params` - a list of dictionaries of parameter values for CLAMS apps 
 
-`post_proc` - a dictionary with the parameters for the post-processing routine
-   or
-`post_procs` - a list of dictionaries like `post_proc`
+`post_procs` - a list of dictionaries each with the parameters for a post-process
 
-It is expected that each `post_proc` dictionary will contain at, at least, keys
+It is expected that each dictionary in `post_procs` will contain at, at least, keys
 for "name" of the postprocess which has a string value (e.g., "visaid_builder") 
 and "artifacts" of the postprocess, a list of strings indicatinng the artifacts
-to be produced (e.g., "slate").  In addition, the `post_proc` dict declares the 
-options and parameters specific to the relevant postprocess.
+to be produced (e.g., "slate").  In addition, the dict declares the options and 
+parameters specific to the relevant postprocess.
 
 `batch_l` - a list of items in the batch.  Each item is a dictionary with keys set
 by the columns of the batch definition list CSV file.  In addition, it includes the
@@ -77,7 +76,7 @@ from drawer.mmif_adjunct import make_blank_mmif, mmif_check
 # %%
 # Define helper functions
 
-def write_job_results_log(cf, batch_l, item_count):
+def write_job_results_log(cf, batch_l, item_num):
     """Write out results to a CSV file and to a JSON file
     Only write out records that have been reached so far
     """
@@ -92,13 +91,13 @@ def write_job_results_log(cf, batch_l, item_count):
         fieldnames = batch_l[0].keys()
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(batch_l[:(item_count-cf["start_after_item"])])
+        writer.writerows(batch_l[:(item_num-cf["start_after_item"])])
     
     with open(job_results_log_json_path, 'w') as file:
-        json.dump(batch_l[:(item_count-cf["start_after_item"])], file, indent=2)
+        json.dump(batch_l[:(item_num-cf["start_after_item"])], file, indent=2)
 
 
-def cleanup_media(cf, item_count, item):
+def cleanup_media(cf, item_num, item):
     """Cleanup media, i.e., remove media file for this item
     Do this only if the global settings allow it
     """
@@ -108,7 +107,7 @@ def cleanup_media(cf, item_count, item):
 
     if not cf["media_required"]:
         print("Job declared media was not required.  Will not attempt to clean up.")
-    elif cf["cleanup_media_per_item"] and item_count > cf["cleanup_beyond_item"]:
+    elif cf["cleanup_media_per_item"] and item_num > cf["cleanup_beyond_item"]:
         print("Attempting to remove media at", item["media_path"])
         removed = remove_media(item["media_path"])
         if removed:
@@ -118,7 +117,11 @@ def cleanup_media(cf, item_count, item):
 
 
 ########################################################
-# %%
+# MAIN PROGRAM
+########################################################
+
+# get the time when the job began
+t0 = datetime.datetime.now()
 
 app_desc="""
 Performs CLAMS processing and post-processing in a loop as specified in a job configuration file.
@@ -140,7 +143,6 @@ parser.add_argument("job_name", metavar="JOBNAME", nargs="?",
     help="A human-readable name for the job; may include spaces; not valid without a JOBID")
 parser.add_argument("--just-get-media", action="store_true",
     help="Just acquire the media listed in the batch definition file.")
-
 
 args = parser.parse_args()
 
@@ -165,7 +167,6 @@ else:
 cli_just_get_media = args.just_get_media
 
 ########################################################
-# %%
 #
 # Process info in the job config file to set up this job.
 # 
@@ -178,10 +179,10 @@ with open(job_conf_path, "r") as jsonfile:
     conffile = json.load(jsonfile)
 
 # Dictionaries to store configuation information for this job
-# These will be based on the conffile dictionary, but checked and normalized
+# (Values will be based on the conffile dictionary, but checked and normalized.)
 cf = {}
-
-t0 = datetime.datetime.now()
+clams = {}
+ 
 cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
 
 # Wrap everything in a big `try` block.  We'll catch some more likely errors, and try
@@ -283,6 +284,11 @@ try:
     else:
         cf["end_after_item"] = None
 
+    if "include_only_items" in conffile:
+        cf["include_only_items"] = conffile["include_only_items"]
+    else:
+        cf["include_only_items"] = None
+
     if "overwrite_mmif" in conffile:
         cf["overwrite_mmif"] = conffile["overwrite_mmif"]
     else:
@@ -346,15 +352,17 @@ try:
     # Post-processing configuration options
 
     if "post_proc" in conffile:
-        # just one post process
+        # just one post process defined in conffile
         if not isinstance( conffile["post_proc"], dict):
             raise RuntimeError("Value for `post_proc` must be a dict.")
-        post_procs = [ conffile["post_proc"] ]
+        else:
+            post_procs = [ conffile["post_proc"] ]
     elif "post_procs" in conffile:
         # list of post processes defined in conffile
         if not isinstance( conffile["post_procs"], list):
             raise RuntimeError("Value for `post_procs` must be a list.")
-        post_procs = conffile["post_procs"] 
+        else:
+            post_procs = conffile["post_procs"] 
     else:
         post_procs = []
 
@@ -407,14 +415,7 @@ for dirpath in dirs:
 
 
 ########################################################
-# %%
 # Process batch in a loop
-
-# Make sure at least an empty list exists to define the batch
-# (This value should get overwritten when we open a batch def file in the next 
-# step. However, if there is no such file, having an empty list this enables 
-# us to exit the empty loop gracefully.)
-batch_l = []
 
 # open batch as a list of dictionaries
 with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
@@ -428,42 +429,28 @@ elif cf["end_after_item"] < cf["start_after_item"]:
 elif cf["end_after_item"] > len(batch_l):
     cf["end_after_item"] = len(batch_l)
 
-# restrict to the appropriate subset
+# restrict the batch to the appropriate sub-list
 batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
 
 # Human-readable intuitive index of which item we're working on
-# (First item has item_count==1, not 0.)
-item_count = cf["start_after_item"]
+# (First item has item_num==1, not 0.)
+item_num = cf["start_after_item"]
 
 print()
 print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
-print(f'Job comprises {len(batch_l)} items.')
+if cf["include_only_items"] is not None:
+    print(f'Will include only specified items: {cf["include_only_items"]}.')
 print("Commencing job...")
 
+########################################################
 # Main loop
 for item in batch_l:
+    item_num += 1
     ti = datetime.datetime.now()
-
     tis = ti.strftime("%Y-%m-%d %H:%M:%S")
 
-    item_count += 1
-    print()
-    print()
-    print("  *  ")
-    #print("*** ITEM #", item_count, ":", item["asset_id"], "[", cf["job_name"], "]", tis)
-    print(f'* * *  ITEM # {item_count} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
-    print("  *  ")
-
-    ########################################################
-    # Initialize attributes for this item
-
-    # set default value for `media_type` if this is not supplied
-    if "media_type" not in item:
-        item["media_type"] = "Moving Image"
-        print("Warning:  Media type not specified. Assuming it is 'Moving Image'.")
-
     # initialize new dictionary elements for this item
-    item["batch_item"] = item_count
+    item["batch_item"] = item_num
     item["skip_reason"] = ""
     item["errors"] = []
     item["media_filename"] = ""
@@ -472,8 +459,24 @@ for item in batch_l:
     item["mmif_paths"] = []
     item["elapsed_seconds"] = None
 
+    # set default value for `media_type` if this is not supplied
+    if "media_type" not in item:
+        item["media_type"] = "Moving Image"
+        print("Warning:  Media type not specified. Assuming it is 'Moving Image'.")
+
     # set the index of the MMIF files so far for this item
     mmifi = -1
+
+    if cf["include_only_items"] is not None:
+        if item["batch_item"] not in cf["include_only_items"]:
+            item["skip_reason"] = "noninclusion"
+            continue
+
+    print()
+    print()
+    print("  *  ")
+    print(f'* * *  ITEM # {item_num} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
+    print("  *  ")
 
     ########################################################
     # Add media to the availability place, if it is not already there,
@@ -510,14 +513,14 @@ for item in batch_l:
             print("Media file for " + item["asset_id"] + " could not be made available.")
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "media"
-            write_job_results_log(cf, batch_l, item_count)
+            write_job_results_log(cf, batch_l, item_num)
             continue
 
         if cf["just_get_media"]:
             print()
             print("Media acquisition successful.")
             # Update results (so we have a record of any failures)
-            write_job_results_log(cf, batch_l, item_count)
+            write_job_results_log(cf, batch_l, item_num)
 
             # continue to next iteration without additional steps
             continue
@@ -557,7 +560,7 @@ for item in batch_l:
                 print("Prerequisite failed:  Media required and no media filename recorded.")
                 print("SKIPPING", item["asset_id"])
                 item["skip_reason"] = "mmif-0-prereq"
-                write_job_results_log(cf, batch_l, item_count)
+                write_job_results_log(cf, batch_l, item_num)
                 continue
             else:
                 print("Prerequisites passed.")
@@ -589,8 +592,8 @@ for item in batch_l:
             mmif_check(mmif_path, complain=True)
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "mmif-0"
-            cleanup_media(cf, item_count, item)
-            write_job_results_log(cf, batch_l, item_count)
+            cleanup_media(cf, item_num, item)
+            write_job_results_log(cf, batch_l, item_num)
             continue
 
 
@@ -649,7 +652,7 @@ for item in batch_l:
                 print("Prerequisite failed:  Input MMIF is not valid.")
                 print("SKIPPING", item["asset_id"])
                 item["skip_reason"] = "mmif-1-prereq"
-                write_job_results_log(cf, batch_l, item_count)
+                write_job_results_log(cf, batch_l, item_num)
                 continue
             else:
                 print("Prerequisites passed.")
@@ -682,7 +685,7 @@ for item in batch_l:
                 except Exception as e:
                     print("Encountered exception:", e)
                     print("Failed to get a response from the CLAMS web service.")
-                    print("Check CLAMS web service and resume before batch item:", item_count)
+                    print("Check CLAMS web service and resume before batch item:", item_num)
                     raise SystemExit("Exiting script.") from e
 
                 print("CLAMS app web serivce response code:", response.status_code)
@@ -793,8 +796,8 @@ for item in batch_l:
     if clams_failed:
         print("SKIPPING", item["asset_id"])
         item["skip_reason"] = "mmif-" + str(mmifi)
-        cleanup_media(cf, item_count, item)
-        write_job_results_log(cf, batch_l, item_count)
+        cleanup_media(cf, item_num, item)
+        write_job_results_log(cf, batch_l, item_num)
         continue
 
 
@@ -825,7 +828,7 @@ for item in batch_l:
                     print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
                     print("SKIPPING", item["asset_id"])
                     item["skip_reason"] = "usemmif-prereq"
-                    write_job_results_log(cf, batch_l, item_count)
+                    write_job_results_log(cf, batch_l, item_num)
                     continue
                 else:
                     print("Step prerequisites passed.")
@@ -857,10 +860,10 @@ for item in batch_l:
     item["elapsed_seconds"] = (tn-ti).seconds
 
     # Clean up
-    cleanup_media(cf, item_count, item)
+    cleanup_media(cf, item_num, item)
 
     # Update results to reflect this iteration of the loop
-    write_job_results_log(cf, batch_l, item_count)
+    write_job_results_log(cf, batch_l, item_num)
 
     # print diag info
     print()
@@ -873,7 +876,7 @@ for item in batch_l:
 
 tn = datetime.datetime.now()
 
-num_skips = len( [item for item in batch_l if item["skip_reason"] != ""] )
+num_skips = len( [item for item in batch_l if item["skip_reason"] not in ["", "noninclusion"]] )
 num_errors = len( [item for item in batch_l if len(item["errors"]) > 0 ] )
 
 print()
@@ -881,8 +884,8 @@ print("****************************")
 print()
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print(num_skips, "out of", len(batch_l), "total items were skipped.")
+print(num_skips, "out of", len(batch_l), "included items were skipped.")
 print(num_errors, "out of", len(batch_l), "total items had errors.")
-print("Results logged in", cf["logs_dir"])
+print(f'Results logged in {cf["logs_dir"]}/')
 print()
 
