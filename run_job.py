@@ -54,7 +54,6 @@ following keys:
    - elapsed_seconds (int)
 """
 
-# %%
 # Import modules
 
 import os
@@ -66,14 +65,20 @@ import warnings
 import subprocess
 import argparse
 import requests
+import logging
 
 import visaid_builder.post_proc_item
 
 from drawer.media_availability import check_avail, make_avail, remove_media
 from drawer.mmif_adjunct import make_blank_mmif, mmif_check
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s"
+)
+
 ########################################################
-# %%
 # Define helper functions
 
 def write_job_results_log(cf, batch_l, item_num):
@@ -440,8 +445,13 @@ item_num = cf["start_after_item"]
 
 print()
 print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
+item_range = list(range(cf["start_after_item"]+1, cf["end_after_item"]+1))
 if cf["include_only_items"] is not None:
     print(f'Will include only specified items: {cf["include_only_items"]}.')
+    total_items =  len( [ i for i in item_range if i in cf["include_only_items"] ] )
+else:
+    total_items = len(item_range)
+print("Total items:", total_items)
 print("Commencing job...")
 
 ########################################################
@@ -455,6 +465,7 @@ for item in batch_l:
     item["batch_item"] = item_num
     item["skip_reason"] = ""
     item["errors"] = []
+    item["problems"] = []
     item["media_filename"] = ""
     item["media_path"] = ""
     item["mmif_files"] = []
@@ -839,15 +850,21 @@ for item in batch_l:
                 # Call separate procedure for appropraite post-processing
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
-                    pp_errors = visaid_builder.post_proc_item.run_post(
+                    pp_errors, pp_problems = visaid_builder.post_proc_item.run_post(
                         item=item, 
                         cf=cf,
                         params=post_proc )
 
                     if pp_errors not in [ None, [] ]:
                         print("Warning:", post_proc["name"], "returned errors:", pp_errors)
-                        item["errors"] += pp_errors
+                        item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
                         print("PROCEEDING.")
+
+                    if pp_problems not in [ None, [] ]:
+                        print("Warning:", post_proc["name"], "encountered problems:", pp_problems)
+                        item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
+                        print("PROCEEDING.")
+
 
                 else:
                     print("Invalid postprocessing procedure:", post_proc)
@@ -880,21 +897,23 @@ tn = datetime.datetime.now()
 
 num_skips = len( [item for item in batch_l if item["skip_reason"] not in ["", "noninclusion"]] )
 num_errors = len( [item for item in batch_l if len(item["errors"]) > 0 ] )
+num_problems = len( [item for item in batch_l if len(item["problems"]) > 0 ] )
+
+total_items = len(batch_l)
 
 if cf["include_only_items"]:
     total_included_items = len( cf["include_only_items"] )
 else:
-    total_included_items = len(batch_l)
-
-total_items = len(batch_l)
+    total_included_items = total_items
 
 print()
 print("****************************")
 print()
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print(num_skips, "out of", total_included_items, "included items were skipped.")
-print(num_errors, "out of", total_items, "total items had errors.")
+print(num_skips, "out of", total_included_items, "items were skipped.")
+print(num_errors, "out of", total_included_items, "items had errors.")
+print(num_problems, "out of", total_included_items, "items had problems.")
 print(f'Results logged in {cf["logs_dir"]}/')
 print()
 
