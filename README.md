@@ -17,7 +17,9 @@ Currently, the only post-processing routines that have been defined are associat
 
 Clone this repository.  Change to the repository directory and do a `pip install -r requirements.txt`.
 
-To use these routines in the CLAMS kitchen, clone the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) project inside the `clams-kitchen` root folder.  Then install additional requirements by doing `pip install -r visaid_builder/requirements.txt`.
+If you wish to use the included `media_availability` module (which downloads media files from Sony Ci), then the `jq` executable must be available in the local environment.
+
+To use the SWT detection app and visaid-builder routines in the CLAMS kitchen, clone the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) project inside the `clams-kitchen` root folder.  Then install additional requirements by doing `pip install -r visaid_builder/requirements.txt`.
 
 
 ## Usage
@@ -29,9 +31,9 @@ You will need a configuration file, which is a JSON file.  See the `CONFIGURATIO
 
 ## Media 
 
-Media files should be placed in a directory specified in the configuration.
+Media files should be placed in a directory specified in the job configuration.
 
-If media files are to be downloaded from Sony Ci, then there must be a file in `./secrets/ci.yml` with the following keys:
+If media files are to be downloaded from Sony Ci using the included `media_availability` module, then there must be a YAML file at `./secrets/ci.yml` with the following keys:
   - `cred_string`
   - `client_id`
   - `client_secret`
@@ -40,4 +42,4 @@ If media files are to be downloaded from Sony Ci, then there must be a file in `
 
 ## Current limitations
 
-This script works with CLAMS apps running in CLI mode or as web services.  However, support for web services is more difficult and may be dropped.  One problem with using apps running as web services is that if the app fails, the script does not currently have a way to restart the web service.  Also, complex parameters, like the 'map' parameter of SWT does not work for web-service mode.
+This script works with CLAMS apps running in CLI mode or as web services.  However, support for web services is more difficult and may be dropped.  One problem with using apps running as web services is that if the app fails, the script does not currently have a way to restart the web service.  Also, complex parameters (like the 'map' parameter of the SWT detection app) does not work for web-service mode.
