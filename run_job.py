@@ -40,13 +40,16 @@ and "artifacts" of the postprocess, a list of strings indicatinng the artifacts
 to be produced (e.g., "slate").  In addition, the dict declares the options and 
 parameters specific to the relevant postprocess.
 
-`batch_l` - a list of items in the batch.  Each item is a dictionary with keys set
-by the columns of the batch definition list CSV file.  In addition, it includes the
-following keys:
-   - asset_id (str)
-   - batch_item (int)
+`batch_l` - a list of items in the batch (limited by values of `start_after_item`
+and `end_after_item` if those were supplied.  Each item is a dictionary with keys set
+by the columns of the batch definition list CSV file.  
+
+`tried_l` - a list of items attempted.  The data structure inherits keys defined
+in `batch_l` and adds the following keys, which are set when each item is ru:
+   - item_num (int)
    - skip_reason (str)
    - errors (list of str)
+   - problems (list of str)
    - media_filename (str)
    - media_path (str)
    - mmif_files (list of str)
@@ -81,10 +84,9 @@ logging.basicConfig(
 ########################################################
 # Define helper functions
 
-def write_job_results_log(cf, batch_l, item_num):
-    """Write out results to a CSV file and to a JSON file
-    Only write out records that have been reached so far
-    """
+def write_tried_log(cf, tried_l):
+    """Write a "runlog" of tried items.
+    Write out both CSV and JSON versions."""
 
     # Results files get a new name every time this script is run
     job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
@@ -93,16 +95,16 @@ def write_job_results_log(cf, batch_l, item_num):
     job_results_log_json_path  = job_results_log_file_base + ".json"
 
     with open(job_results_log_csv_path, 'w', newline='') as file:
-        fieldnames = batch_l[0].keys()
+        fieldnames = tried_l[0].keys()
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(batch_l[:(item_num-cf["start_after_item"])])
+        writer.writerows(tried_l)
     
     with open(job_results_log_json_path, 'w') as file:
-        json.dump(batch_l[:(item_num-cf["start_after_item"])], file, indent=2)
+        json.dump(tried_l, file, indent=2)
 
 
-def cleanup_media(cf, item_num, item):
+def cleanup_media(cf, item):
     """Cleanup media, i.e., remove media file for this item
     Do this only if the global settings allow it
     """
@@ -112,7 +114,7 @@ def cleanup_media(cf, item_num, item):
 
     if not cf["media_required"]:
         print("Job declared media was not required.  Will not attempt to clean up.")
-    elif cf["cleanup_media_per_item"] and item_num > cf["cleanup_beyond_item"]:
+    elif cf["cleanup_media_per_item"] and item["item_num"] > cf["cleanup_beyond_item"]:
         print("Attempting to remove media at", item["media_path"])
         removed = remove_media(item["media_path"])
         if removed:
@@ -290,9 +292,12 @@ try:
         cf["end_after_item"] = None
 
     if "include_only_items" in conffile:
-        beg = cf["start_after_item"] if cf["start_after_item"] else 0
-        end = cf["end_after_item"] if cf["end_after_item"] else 999999
-        cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
+        if conffile["include_only_items"] is None:
+            cf["include_only_items"] = None
+        else:
+            beg = cf["start_after_item"] if cf["start_after_item"] else 0
+            end = cf["end_after_item"] if cf["end_after_item"] else 999999
+            cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
     else:
         cf["include_only_items"] = None
 
@@ -421,12 +426,19 @@ for dirpath in dirs:
         os.mkdir(dirpath)
 
 
-########################################################
+############################################################################
+############################################################################
 # Process batch in a loop
+############################################################################
+############################################################################
 
 # open batch as a list of dictionaries
 with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
     batch_l = list(csv.DictReader(csvfile))
+
+# add a human-readable item index
+for index, item in enumerate(batch_l, start=1):
+    item["item_num"] = index
 
 # Re-set last item according to the length of the batch list
 if cf["end_after_item"] is None:
@@ -439,30 +451,32 @@ elif cf["end_after_item"] > len(batch_l):
 # restrict the batch to the appropriate sub-list
 batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
 
-# Human-readable intuitive index of which item we're working on
-# (First item has item_num==1, not 0.)
-item_num = cf["start_after_item"]
+if cf["include_only_items"] is not None:
+    total_items =  len( [ item for item in batch_l 
+                          if item["item_num"] in cf["include_only_items"] ] )
+else:
+    total_items = len(batch_l)
+
+# Like batch_l, but accumulating each item that has been tried
+tried_l = []
 
 print()
 print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
-item_range = list(range(cf["start_after_item"]+1, cf["end_after_item"]+1))
 if cf["include_only_items"] is not None:
     print(f'Will include only specified items: {cf["include_only_items"]}.')
-    total_items =  len( [ i for i in item_range if i in cf["include_only_items"] ] )
-else:
-    total_items = len(item_range)
 print("Total items:", total_items)
 print("Commencing job...")
 
 ########################################################
 # Main loop
-for item in batch_l:
-    item_num += 1
+for batch_item in batch_l:
     ti = datetime.datetime.now()
     tis = ti.strftime("%Y-%m-%d %H:%M:%S")
 
+    item = batch_item.copy()
+    item_num = item["item_num"]
+
     # initialize new dictionary elements for this item
-    item["batch_item"] = item_num
     item["skip_reason"] = ""
     item["errors"] = []
     item["problems"] = []
@@ -480,9 +494,13 @@ for item in batch_l:
     # set the index of the MMIF files so far for this item
     mmifi = -1
 
+    # Preemptively skip items not in the include-only list
+    # Just exit the loop, and go to the next item.
     if cf["include_only_items"] is not None:
-        if item["batch_item"] not in cf["include_only_items"]:
+        if item["item_num"] not in cf["include_only_items"]:
             item["skip_reason"] = "noninclusion"
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
             continue
 
     print()
@@ -526,14 +544,16 @@ for item in batch_l:
             print("Media file for " + item["asset_id"] + " could not be made available.")
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "media"
-            write_job_results_log(cf, batch_l, item_num)
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
             continue
 
         if cf["just_get_media"]:
             print()
             print("Media acquisition successful.")
             # Update results (so we have a record of any failures)
-            write_job_results_log(cf, batch_l, item_num)
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
 
             # continue to next iteration without additional steps
             continue
@@ -569,11 +589,12 @@ for item in batch_l:
             # Check for prereqs
             if cf["media_required"] and item["media_filename"] == "":
                 # prereqs not satisfied
-                # print error messages, updated results, continue to next loop iteration
+                # print error messages, update results, continue to next loop iteration
                 print("Prerequisite failed:  Media required and no media filename recorded.")
                 print("SKIPPING", item["asset_id"])
-                item["skip_reason"] = "mmif-0-prereq"
-                write_job_results_log(cf, batch_l, item_num)
+                item["skip_reason"] = f"mmif-{mmifi}-prereq"
+                tried_l.append(item)
+                write_tried_log(cf, tried_l)
                 continue
             else:
                 print("Prerequisites passed.")
@@ -601,12 +622,13 @@ for item in batch_l:
             item["mmif_paths"].append(mmif_path)
         else:
             # step failed
-            # print error messages, updated results, continue to next loop iteration
+            # print error messages, update results, continue to next loop iteration
             mmif_check(mmif_path, complain=True)
             print("SKIPPING", item["asset_id"])
-            item["skip_reason"] = "mmif-0"
-            cleanup_media(cf, item_num, item)
-            write_job_results_log(cf, batch_l, item_num)
+            item["skip_reason"] = f"mmif-{mmifi}"
+            cleanup_media(cf, item)
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
             continue
 
 
@@ -622,8 +644,10 @@ for item in batch_l:
 
     for i in range(num_clams_stages):
 
-        # Don't run if previous step failed
+        # Don't run another stage of CLAMS processing if previous stage failed
         if clams_failed:
+            # Go to next step of clams stages loop
+            # (does not break out of the item)
             continue
 
         mmifi += 1
@@ -660,12 +684,13 @@ for item in batch_l:
             mmif_status = mmif_check(item["mmif_paths"][mmifi-1])
             if 'valid' not in mmif_status:
                 # prereqs not satisfied
-                # print error messages, updated results, continue to next loop iteration
                 mmif_check(mmif_path, complain=True)
                 print("Prerequisite failed:  Input MMIF is not valid.")
                 print("SKIPPING", item["asset_id"])
-                item["skip_reason"] = "mmif-1-prereq"
-                write_job_results_log(cf, batch_l, item_num)
+                item["skip_reason"] = f"mmif-{mmifi}-prereq"
+                clams_failed = True
+                # Go to next step of clams stages loop
+                # (does not break out of the item)
                 continue
             else:
                 print("Prerequisites passed.")
@@ -801,16 +826,19 @@ for item in batch_l:
             item["mmif_paths"].append(mmif_path)
         else:
             # step failed
-            # print error messages, updated results, continue to next loop iteration
+            # print error messages, update results, mark the CLAMS processing has failed
             mmif_check(mmif_path, complain=True)
             clams_failed = True
             
 
     if clams_failed:
+        # step failed
+        # print error messages, update results, continue to next loop iteration
         print("SKIPPING", item["asset_id"])
-        item["skip_reason"] = "mmif-" + str(mmifi)
-        cleanup_media(cf, item_num, item)
-        write_job_results_log(cf, batch_l, item_num)
+        item["skip_reason"] = f"mmif-{mmifi}"
+        cleanup_media(cf, item)
+        tried_l.append(item)
+        write_tried_log(cf, tried_l)
         continue
 
 
@@ -825,27 +853,28 @@ for item in batch_l:
         print("No postprocessing procedures requested.  Will not postprocess.")
 
     else:
-        # run each post processing procedure that has been defined.
+        # Check for prereqs
+        mmif_status = mmif_check(item["mmif_paths"][mmifi])
+        if ('laden' not in mmif_status or 'error-views' in mmif_status):
+            # prereqs not satisfied
+            # print error messages, update results, continue to next loop iteration
+            mmif_check(mmif_path, complain=True)
+            print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
+            print("SKIPPING", item["asset_id"])
+            item["skip_reason"] = "usemmif-prereq"
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
+            continue
+        else:
+            print("Step prerequisites passed.")
+
+        # Loop throug and run each post processing procedure that has been listed.
         for post_proc in post_procs:
         
             if "name" not in post_proc:
                 print("Postprocessing procedure not named.  Will not attempt.")
             else:
                 print("Will attempt to run postprocessing procedure:", post_proc["name"])
-                # Check for prereqs
-                mmif_status = mmif_check(item["mmif_paths"][mmifi])
-                if ('laden' not in mmif_status or 'error-views' in mmif_status):
-                    # prereqs not satisfied
-                    # print error messages, updated results, continue to next loop iteration
-                    mmif_check(mmif_path, complain=True)
-                    print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
-                    print("SKIPPING", item["asset_id"])
-                    item["skip_reason"] = "usemmif-prereq"
-                    write_job_results_log(cf, batch_l, item_num)
-                    continue
-                else:
-                    print("Step prerequisites passed.")
-
 
                 # Call separate procedure for appropraite post-processing
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
@@ -865,7 +894,6 @@ for item in batch_l:
                         item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
                         print("PROCEEDING.")
 
-
                 else:
                     print("Invalid postprocessing procedure:", post_proc)
 
@@ -879,41 +907,41 @@ for item in batch_l:
     item["elapsed_seconds"] = (tn-ti).seconds
 
     # Clean up
-    cleanup_media(cf, item_num, item)
+    cleanup_media(cf, item)
 
     # Update results to reflect this iteration of the loop
-    write_job_results_log(cf, batch_l, item_num)
+    tried_l.append(item)
+    write_tried_log(cf, tried_l)
 
     # print diag info
     print()
     print("Elapsed time for this item:", item["elapsed_seconds"], "seconds")
 
 
-
 # end of main processing loop
 ########################################################
 
+
 tn = datetime.datetime.now()
 
-num_skips = len( [item for item in batch_l if item["skip_reason"] not in ["", "noninclusion"]] )
-num_errors = len( [item for item in batch_l if len(item["errors"]) > 0 ] )
-num_problems = len( [item for item in batch_l if len(item["problems"]) > 0 ] )
-
-total_items = len(batch_l)
-
-if cf["include_only_items"]:
-    total_included_items = len( cf["include_only_items"] )
-else:
-    total_included_items = total_items
+num_tries = len( [item for item in tried_l if item["skip_reason"] != "noninclusion"] )
+num_skips = len( [item for item in tried_l if item["skip_reason"] not in ["", "noninclusion"]] )
+num_errors = len( [item for item in tried_l if len(item["errors"]) > 0 ] )
+num_problems = len( [item for item in tried_l if len(item["problems"]) > 0 ] )
 
 print()
 print("****************************")
 print()
+if num_tries == total_items:
+    print(f"Processed {total_items} items.")
+else:
+    print(f"Warning: Attempted to process {total_items} total items, but logged {num_tries} tries.")
+print(num_skips, "out of", total_items, "items were skipped.")
+print(num_errors, "out of", total_items, "items had errors.")
+print(num_problems, "out of", total_items, "items had problems.")
+
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print(num_skips, "out of", total_included_items, "items were skipped.")
-print(num_errors, "out of", total_included_items, "items had errors.")
-print(num_problems, "out of", total_included_items, "items had problems.")
 print(f'Results logged in {cf["logs_dir"]}/')
 print()
 
