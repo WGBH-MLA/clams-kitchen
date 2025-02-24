@@ -1,5 +1,9 @@
-secrets/
-visaid_builder/
-stovetop/
-shipments/
-buffet/
+visaid_builder
+secrets
+secrets/*
+stovetop
+shipments
+buffet
+.vscode
+__pycache__
+drawer/__pycache__
