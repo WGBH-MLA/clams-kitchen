@@ -432,11 +432,13 @@ for dirpath in dirs:
 ############################################################################
 ############################################################################
 
-# open batch as a list of dictionaries
+# Open the batch spreadsheet as a list of dictionaries
+# (But we'll restrict this list based on the configuration.)
 with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
     batch_l = list(csv.DictReader(csvfile))
 
-# add a human-readable item index
+# Add a human-readable item index to the batch list
+# (This will be used for filtering and logging.)
 for index, item in enumerate(batch_l, start=1):
     item["item_num"] = index
 
@@ -448,14 +450,12 @@ elif cf["end_after_item"] < cf["start_after_item"]:
 elif cf["end_after_item"] > len(batch_l):
     cf["end_after_item"] = len(batch_l)
 
-# restrict the batch to the appropriate sub-list
+# restrict the batch to the appropriate range
 batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
 
+# Filter the batch just to specified items (if specified)
 if cf["include_only_items"] is not None:
-    total_items =  len( [ item for item in batch_l 
-                          if item["item_num"] in cf["include_only_items"] ] )
-else:
-    total_items = len(batch_l)
+    batch_l = [ item for item in batch_l if item["item_num"] in cf["include_only_items"] ]
 
 # Like batch_l, but accumulating each item that has been tried
 tried_l = []
@@ -463,13 +463,14 @@ tried_l = []
 print()
 print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
 if cf["include_only_items"] is not None:
-    print(f'Will include only specified items: {cf["include_only_items"]}.')
-print("Total items:", total_items)
+    print(f'Will omit all items except those specified: {cf["include_only_items"]}.')
+print("Total items:", len(batch_l))
 print("Commencing job...")
 
 ########################################################
 # Main loop
 for batch_item in batch_l:
+
     ti = datetime.datetime.now()
     tis = ti.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -493,15 +494,6 @@ for batch_item in batch_l:
 
     # set the index of the MMIF files so far for this item
     mmifi = -1
-
-    # Preemptively skip items not in the include-only list
-    # Just exit the loop, and go to the next item.
-    if cf["include_only_items"] is not None:
-        if item["item_num"] not in cf["include_only_items"]:
-            item["skip_reason"] = "noninclusion"
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-            continue
 
     print()
     print()
@@ -924,21 +916,21 @@ for batch_item in batch_l:
 
 tn = datetime.datetime.now()
 
-num_tries = len( [item for item in tried_l if item["skip_reason"] != "noninclusion"] )
-num_skips = len( [item for item in tried_l if item["skip_reason"] not in ["", "noninclusion"]] )
+num_tries = len( tried_l )
+num_skips = len( [item for item in tried_l if item["skip_reason"] not in [""]] )
 num_errors = len( [item for item in tried_l if len(item["errors"]) > 0 ] )
 num_problems = len( [item for item in tried_l if len(item["problems"]) > 0 ] )
 
 print()
 print("****************************")
 print()
-if num_tries == total_items:
-    print(f"Processed {total_items} items.")
+if num_tries == len(batch_l):
+    print(f"Processed {num_tries} items.")
 else:
-    print(f"Warning: Attempted to process {total_items} total items, but logged {num_tries} tries.")
-print(num_skips, "out of", total_items, "items were skipped.")
-print(num_errors, "out of", total_items, "items had errors.")
-print(num_problems, "out of", total_items, "items had problems.")
+    print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {num_tries} attempted items.")
+print(num_skips, "out of", num_tries, "items were skipped.")
+print(num_errors, "out of", num_tries, "items had errors.")
+print(num_problems, "out of", num_tries, "items had problems.")
 
 print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
 print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
