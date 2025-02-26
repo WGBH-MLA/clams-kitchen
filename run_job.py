@@ -21,18 +21,20 @@ are calculated at the beginning of the job.  It has the following keys:
    - cleanup_media_per_item (bool)
    - cleanup_beyond_item (int)
    - artifacts_dir (str)
+   - media_dir (str)
+   - shell_media_dir (str)
+   - mmif_dir (str)
+   - shell_mmif_dir (str)
 
-`clams_run_cli` - bool indicating whether to run CLAMS apps as CLI or web service   
+`clams` - CLAMS-specific configuration dictionary. The values are set by the 
+job configuration file.  It has the following keys:
+   - run_cli (bool) indicating whether to run CLAMS apps as CLI or web service   
+   - run_cli_gpu (bool) indicating whether to call Docker with GPU (cuda) enabled
+   - endpoints (list) URLS for web service endpoints for CLAMS apps
+   - images (list) names for Docker images for CLAMS apps 
+   - param_sets (list of dicts) each with parameters for a CLAMS app
 
-`clams_run_cli_gpu` - bool indicating whether to call Docker with GPU (cuda) enabled
-
-`clams_endpoints` - a list of URLS for web service endpoints for CLAMS apps
-
-`clams_images` - a list of names for Docker images for CLAMS apps 
-
-`clams_params` - a list of dictionaries of parameter values for CLAMS apps 
-
-`post_procs` - a list of dictionaries each with the parameters for a post-process
+`post_procs` - a list of dicts each with the parameters for a post-process
 
 It is expected that each dictionary in `post_procs` will contain at, at least, keys
 for "name" of the postprocess which has a string value (e.g., "visaid_builder") 
@@ -215,10 +217,10 @@ try:
 
     # Paths and directories 
 
-    # Paths for local_base and mnt_base will usually be the same in a 
+    # Paths for local_base and shell_base will usually be the same in a 
     # POSIX-like environment.
     # They differ in a Windows environment where the local_base may begin with
-    # Windows drive letters, e.g., "C:/Users/..." and the mnt_base may be 
+    # Windows drive letters, e.g., "C:/Users/..." and the shell_base may be 
     # translated to a POSIX-compatible format, e.g., "/mnt/c/Users/...".
     if "local_base" in conffile:
         local_base = conffile["local_base"]
@@ -231,26 +233,28 @@ try:
         #  "def_path" is required if not specified on the command line
         batch_def_path = local_base + conffile["def_path"]
 
-    if "mnt_base" in conffile:
-        mnt_base = conffile["mnt_base"]
+    if "shell_base" in conffile:
+        shell_base = conffile["shell_base"]
+    elif "mnt_base" in conffile:
+        shell_base = conffile["mnt_base"]
     else:
-        mnt_base = local_base
+        shell_base = local_base
 
     # "results_dir" is required
     results_dir = local_base + conffile["results_dir"]
-    mnt_results_dir = mnt_base + conffile["results_dir"]
+    shell_results_dir = shell_base + conffile["results_dir"]
     
     # "media_dir" is required
-    media_dir = local_base + conffile["media_dir"]
-    mnt_media_dir = mnt_base + conffile["media_dir"]
+    cf["media_dir"] = local_base + conffile["media_dir"]
+    cf["shell_media_dir"] = shell_base + conffile["media_dir"]
 
     if "mmif_dir" in conffile:
-        mmif_dir = local_base + conffile["mmif_dir"]
-        mnt_mmif_dir = mnt_base + conffile["mmif_dir"]
+        cf["mmif_dir"] = local_base + conffile["mmif_dir"]
+        cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
     else:
         mmif_dir_name = "mmif"
-        mmif_dir = results_dir + "/" + mmif_dir_name 
-        mnt_mmif_dir = mnt_results_dir + "/" + mmif_dir_name 
+        cf["mmif_dir"] = results_dir + "/" + mmif_dir_name 
+        cf["shell_mmif_dir"] = shell_results_dir + "/" + mmif_dir_name 
 
     if "logs_dir" in conffile:
         cf["logs_dir"] = local_base + conffile["logs_dir"]
@@ -258,7 +262,7 @@ try:
         cf["logs_dir"] = results_dir
 
     # Checks to make sure directories and setup file exist
-    for dirpath in [results_dir, cf["logs_dir"], media_dir, batch_def_path]:
+    for dirpath in [results_dir, cf["logs_dir"], cf["media_dir"], batch_def_path]:
         if not os.path.exists(dirpath):
             raise FileNotFoundError("Path does not exist: " + dirpath)
 
@@ -325,39 +329,39 @@ try:
     # CLAMS config
 
     if "clams_run_cli" in conffile:
-        clams_run_cli = conffile["clams_run_cli"]
+        clams["run_cli"] = conffile["clams_run_cli"]
     elif cf["just_get_media"]:
-        clams_run_cli = False
+        clams["run_cli"] = False
     else:
-        clams_run_cli = True
+        clams["run_cli"] = True
     
     if "clams_run_cli_gpu" in conffile:
-        clams_run_cli_gpu = conffile["clams_run_cli_gpu"]
+        clams["run_cli_gpu"] = conffile["clams_run_cli_gpu"]
     else:
-        clams_run_cli_gpu = False
+        clams["run_cli_gpu"] = False
 
     if cf["just_get_media"]:
-        num_clams_stages = 0
-        clams_endpoints = clams_images = clams_params = []
+        clams["num_stages"] = 0
+        clams["endpoints"] = clams["images"] = clams["param_sets"] = []
     else:
-        if not clams_run_cli:
+        if not clams["run_cli"]:
             # need to know the URLs of the webservices if (but only if) not running
             # in CLI mode 
-            clams_endpoints = conffile["clams_endpoints"]
-            clams_images = []
-            num_clams_stages = len(clams_endpoints)
+            clams["endpoints"] = conffile["clams_endpoints"]
+            clams["images"] = []
+            clams["num_stages"] = len(clams["endpoints"])
         else:
             # need to know the docker image if (but only if) running in CLI mode
-            clams_images = conffile["clams_images"]
-            clams_endpoints = []
-            num_clams_stages = len(clams_images)
+            clams["images"] = conffile["clams_images"]
+            clams["endpoints"] = []
+            clams["num_stages"] = len(clams["images"])
 
         if "clams_params" in conffile:
-            clams_params = conffile["clams_params"]
+            clams["param_sets"] = conffile["clams_params"]
         else:
-            clams_params = []
+            clams["param_sets"] = []
 
-    if len(clams_params) != num_clams_stages:
+    if len(clams["param_sets"]) != clams["num_stages"]:
         raise RuntimeError("Number of CLAMS stages not equal to number of sets of CLAMS params.") 
 
 
@@ -404,7 +408,7 @@ except RuntimeError as e:
 # Check and/or create directories for job output
 
 # Create list of dirs to create/validate
-dirs = [ mmif_dir ]
+dirs = [ cf["mmif_dir"] ]
 
 if cf["artifacts_dir"]:
     dirs.append(cf["artifacts_dir"])
@@ -513,17 +517,17 @@ for batch_item in batch_l:
         print("Will continue.") 
     else:
         media_path = ""
-        media_filename = check_avail(item["asset_id"], media_dir)
+        media_filename = check_avail(item["asset_id"], cf["media_dir"])
 
         if media_filename is not None:
-            media_path = media_dir + "/" + media_filename
+            media_path = cf["media_dir"] + "/" + media_filename
             print("Media already available:  ", media_path) 
         else:
             print("Media not yet available; will try to make available.") 
             if item["sonyci_id"] :
-                media_filename = make_avail(item["asset_id"], item["sonyci_id"], media_dir)
+                media_filename = make_avail(item["asset_id"], item["sonyci_id"], cf["media_dir"])
                 if media_filename is not None:
-                    media_path = media_dir + "/" + media_filename
+                    media_path = cf["media_dir"] + "/" + media_filename
             else:
                 print("No Ci ID for " + item["asset_id"])
 
@@ -570,7 +574,7 @@ for batch_item in batch_l:
 
         # define MMIF for this stage of this iteration
         mmif_filename = item["asset_id"] + "_" + str(mmifi) + ".mmif"
-        mmif_path = mmif_dir + "/" + mmif_filename
+        mmif_path = cf["mmif_dir"] + "/" + mmif_filename
 
         # Check to see if it exists; if not create it
         if ( os.path.isfile(mmif_path) and not cf["overwrite_mmif"]):
@@ -631,10 +635,10 @@ for batch_item in batch_l:
     print()
     print("# CREATING ANNOTATION-LADEN MMIF WITH CLAMS")
 
-    print("Will run", num_clams_stages, "round(s) of CLAMS processing.")
+    print("Will run", clams["num_stages"], "round(s) of CLAMS processing.")
     clams_failed = False
 
-    for i in range(num_clams_stages):
+    for i in range(clams["num_stages"]):
 
         # Don't run another stage of CLAMS processing if previous stage failed
         if clams_failed:
@@ -649,7 +653,7 @@ for batch_item in batch_l:
 
         # Define MMIF for this step of the job
         mmif_filename = item["asset_id"] + "_" + cf["job_id"] + "_" + str(mmifi) + ".mmif"
-        mmif_path = mmif_dir + "/" + mmif_filename
+        mmif_path = cf["mmif_dir"] + "/" + mmif_filename
 
         # Decide whether to use existing MMIF file or create a new one
         make_new_mmif = True
@@ -687,21 +691,21 @@ for batch_item in batch_l:
             else:
                 print("Prerequisites passed.")
 
-            if not clams_run_cli :
+            if not clams["run_cli"] :
                 ################################################################
                 # Run CLAMS app, assuming the app is already running as a local web service
                 print("Sending request to CLAMS web service...")
 
-                if len(clams_params[clamsi]) > 0:
+                if len(clams["param_sets"][clamsi]) > 0:
                     # build querystring with parameters in job configuration
                     qsp = "?"
-                    for p in clams_params[clamsi]:
+                    for p in clams["param_sets"][clamsi]:
                         qsp += p
                         qsp += "="
-                        qsp += str(clams_params[clamsi][p])
+                        qsp += str(clams["param_sets"][clamsi][p])
                         qsp += "&"
                     qsp = qsp[:-1] # remove trailing "&"
-                service = clams_endpoints[clamsi]
+                service = clams["endpoints"][clamsi]
                 endpoint = service + qsp
 
                 headers = {'Accept': 'application/json'}
@@ -758,35 +762,35 @@ for batch_item in batch_l:
                         docker_bin_path, 
                         "run",
                         "-v",
-                        mnt_media_dir + '/:/data',
+                        cf["shell_media_dir"] + '/:/data',
                         "-v",
-                        mnt_mmif_dir + '/:/mmif',
+                        cf["shell_mmif_dir"] + '/:/mmif',
                         "-i",
                         "--rm"
                     ]
-                if clams_run_cli_gpu:
+                if clams["run_cli_gpu"]:
                     coml += [ "--gpus", "all" ]
                 coml += [
-                        clams_images[clamsi],
+                        clams["images"][clamsi],
                         "python",
                         "cli.py"
                     ]
                 coml = coml_prefix + coml
     
                 # If there are parameters, add them to the command list
-                if len(clams_params[clamsi]) > 0:
+                if len(clams["param_sets"][clamsi]) > 0:
                     app_params = []
-                    for p in clams_params[clamsi]:
-                        if type(clams_params[clamsi][p]) != dict:
+                    for p in clams["param_sets"][clamsi]:
+                        if type(clams["param_sets"][clamsi][p]) != dict:
                             # parameter is not nested; just add it
                             app_params.append( "--" + p )
-                            app_params.append( str(clams_params[clamsi][p]) )
+                            app_params.append( str(clams["param_sets"][clamsi][p]) )
                         else:
                             # parameter is a dictionary; break it into separately
                             # specified parameters
-                            for mkey in clams_params[clamsi][p]:
+                            for mkey in clams["param_sets"][clamsi][p]:
                                 app_params.append( "--" + p )
-                                mvalue = clams_params[clamsi][p][mkey]
+                                mvalue = clams["param_sets"][clamsi][p][mkey]
                                 app_params.append( mkey + ":" +  mvalue )
 
                     # Work-around to delimit values passed with --map flag:
