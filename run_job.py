@@ -44,11 +44,11 @@ parameters specific to the relevant postprocess.
 
 `batch_l` - a list of items in the batch (limited by values of `start_after_item`
 and `end_after_item` if those were supplied.  Each item is a dictionary with keys set
-by the columns of the batch definition list CSV file.  
+by the columns of the batch definition list CSV file.  An additional index with key 
+of `"item_num"` is added after the CSV file is read.
 
 `tried_l` - a list of items attempted.  The data structure inherits keys defined
 in `batch_l` and adds the following keys, which are set when each item is ru:
-   - item_num (int)
    - skip_reason (str)
    - errors (list of str)
    - problems (list of str)
@@ -83,8 +83,9 @@ logging.basicConfig(
     format="%(message)s"
 )
 
-########################################################
+############################################################################
 # Define helper functions
+############################################################################
 
 def write_tried_log(cf, tried_l):
     """Write a "runlog" of tried items.
@@ -125,361 +126,407 @@ def cleanup_media(cf, item):
         print("Leaving media for this item.")
 
 
-########################################################
-# MAIN PROGRAM
-########################################################
+############################################################################
+# main function
+############################################################################
+def main():
+    """Reads commandline arguments and input files, and sets up job"""
 
-# get the time when the job began
-t0 = datetime.datetime.now()
+    # get the time when the job began
+    t0 = datetime.datetime.now()
 
-app_desc="""
-Performs CLAMS processing and post-processing in a loop as specified in a job configuration file.
+    ############################################################################
+    # Handle command line arguments
 
-Note: Any values passed on the command line override values in the configuration file.
-"""
-parser = parser = argparse.ArgumentParser(
-        prog='python run_job.py',
-        description=app_desc,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-)
-parser.add_argument("job_conf_path", metavar="CONFIG",
-    help="Path for the JSON job configuration file")
-parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
-    help="Path for the CSV file defining the batch of items to be processed.")
-parser.add_argument("job_id", metavar="JOBID", nargs="?",
-    help="An identifer string for the job; no spaces allowed")
-parser.add_argument("job_name", metavar="JOBNAME", nargs="?",
-    help="A human-readable name for the job; may include spaces; not valid without a JOBID")
-parser.add_argument("--just-get-media", action="store_true",
-    help="Just acquire the media listed in the batch definition file.")
+    app_desc="""
+    Performs CLAMS processing and post-processing in a loop as specified in a job configuration file.
 
-args = parser.parse_args()
+    Note: Any values passed on the command line override values in the configuration file.
+    """
+    parser = parser = argparse.ArgumentParser(
+            prog='python run_job.py',
+            description=app_desc,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("job_conf_path", metavar="CONFIG",
+        help="Path for the JSON job configuration file")
+    parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
+        help="Path for the CSV file defining the batch of items to be processed.")
+    parser.add_argument("job_id", metavar="JOBID", nargs="?",
+        help="An identifer string for the job; no spaces allowed")
+    parser.add_argument("job_name", metavar="JOBNAME", nargs="?",
+        help="A human-readable name for the job; may include spaces; not valid without a JOBID")
+    parser.add_argument("--just-get-media", action="store_true",
+        help="Just acquire the media listed in the batch definition file.")
 
-job_conf_path = args.job_conf_path
+    args = parser.parse_args()
 
-if args.batch_def_path is not None:
-    cli_batch_def_path = args.batch_def_path
-else:
-    cli_batch_def_path = None
+    job_conf_path = args.job_conf_path
 
-if args.job_id is not None:
-    cli_job_id = args.job_id
-    
-    if args.job_name is not None:
-        cli_job_name = args.job_name
+    if args.batch_def_path is not None:
+        cli_batch_def_path = args.batch_def_path
     else:
-        cli_job_name = cli_job_id
-else:
-    cli_job_id = None
-    cli_job_name = None
+        cli_batch_def_path = None
 
-cli_just_get_media = args.just_get_media
-
-########################################################
-#
-# Process info in the job config file to set up this job.
-# 
-print()
-print("Setting up job...")
-print()
-
-# Set job-specific configuration based on values in configuration file
-with open(job_conf_path, "r") as jsonfile:
-    conffile = json.load(jsonfile)
-
-# Dictionaries to store configuation information for this job
-# (Values will be based on the conffile dictionary, but checked and normalized.)
-cf = {}
-clams = {}
- 
-cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
-
-# Wrap everything in a big `try` block.  We'll catch some more likely errors, and try
-# to exit gracefully.  (However, the error checking here is not intended to be 
-# especially robust.)
-try: 
-
-    if cli_job_id is not None:
-        cf["job_id"] = cli_job_id
-    else:
-        # This is required to be in the config file if it is not on the command line
-        if "id" in conffile:
-            cf["job_id"] = conffile["id"] 
+    if args.job_id is not None:
+        cli_job_id = args.job_id
+        
+        if args.job_name is not None:
+            cli_job_name = args.job_name
         else:
-            raise RuntimeError("No job ID specified on commandline or in config file.") 
-
-    if cli_job_name is not None:
-        cf["job_name"] = cli_job_name
-    elif "name" in conffile:
-        cf["job_name"] = conffile["name"]
+            cli_job_name = cli_job_id
     else:
-        cf["job_name"] = cf["job_id"]
+        cli_job_id = None
+        cli_job_name = None
 
-    # Paths and directories 
+    cli_just_get_media = args.just_get_media
 
-    # Paths for local_base and shell_base will usually be the same in a 
-    # POSIX-like environment.
-    # They differ in a Windows environment where the local_base may begin with
-    # Windows drive letters, e.g., "C:/Users/..." and the shell_base may be 
-    # translated to a POSIX-compatible format, e.g., "/mnt/c/Users/...".
-    if "local_base" in conffile:
-        local_base = conffile["local_base"]
-    else:
-        local_base = ""
 
-    if cli_batch_def_path is not None:
-        batch_def_path = cli_batch_def_path
-    else:
-        #  "def_path" is required if not specified on the command line
-        batch_def_path = local_base + conffile["def_path"]
+    ############################################################################
+    # Process info in the job config file to set up this job.
 
-    if "shell_base" in conffile:
-        shell_base = conffile["shell_base"]
-    elif "mnt_base" in conffile:
-        shell_base = conffile["mnt_base"]
-    else:
-        shell_base = local_base
+    print()
+    print("Setting up job...")
+    print()
 
-    # "results_dir" is required
-    results_dir = local_base + conffile["results_dir"]
-    shell_results_dir = shell_base + conffile["results_dir"]
+    # Set job-specific configuration based on values in configuration file
+    with open(job_conf_path, "r") as jsonfile:
+        try: 
+            conffile = json.load(jsonfile)
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {str(e)}")
+            print()
+            raise SystemExit from e
+        
+
+    # Dictionaries to store configuation information for this job
+    # (Values will be based on the conffile dictionary, but checked and normalized.)
+    cf = {}
+    clams = {}
     
-    # "media_dir" is required
-    cf["media_dir"] = local_base + conffile["media_dir"]
-    cf["shell_media_dir"] = shell_base + conffile["media_dir"]
+    cf["start_timestamp"] = t0.strftime("%Y%m%d_%H%M%S")
 
-    if "mmif_dir" in conffile:
-        cf["mmif_dir"] = local_base + conffile["mmif_dir"]
-        cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
-    else:
-        mmif_dir_name = "mmif"
-        cf["mmif_dir"] = results_dir + "/" + mmif_dir_name 
-        cf["shell_mmif_dir"] = shell_results_dir + "/" + mmif_dir_name 
+    # Wrap everything in a big `try` block.  We'll catch some more likely errors, and try
+    # to exit gracefully.  (However, the error checking here is not intended to be 
+    # especially robust.)
+    try: 
 
-    if "logs_dir" in conffile:
-        cf["logs_dir"] = local_base + conffile["logs_dir"]
-    else:
-        cf["logs_dir"] = results_dir
-
-    # Checks to make sure directories and setup file exist
-    for dirpath in [results_dir, cf["logs_dir"], cf["media_dir"], batch_def_path]:
-        if not os.path.exists(dirpath):
-            raise FileNotFoundError("Path does not exist: " + dirpath)
-
-
-    # Additional configuration options
-    if "media_required" in conffile:
-        cf["media_required"] = conffile["media_required"]
-    else:
-        cf["media_required"] = True
-
-    if cli_just_get_media:
-        cf["just_get_media"] = True
-    elif "just_get_media" in conffile:
-        cf["just_get_media"] = conffile["just_get_media"]
-    else:
-        cf["just_get_media"] = False
-
-    if "start_after_item" in conffile:
-        cf["start_after_item"] = conffile["start_after_item"]
-    else:
-        cf["start_after_item"] = 0
-
-    if "end_after_item" in conffile:
-        if conffile["end_after_item"] == "":
-            cf["end_after_item"] = None
-        elif conffile["end_after_item"] is None:
-            cf["end_after_item"] = None
+        if cli_job_id is not None:
+            cf["job_id"] = cli_job_id
         else:
-            cf["end_after_item"] = conffile["end_after_item"]
-    else:
-        cf["end_after_item"] = None
+            # This is required to be in the config file if it is not on the command line
+            if "id" in conffile:
+                cf["job_id"] = conffile["id"] 
+            else:
+                raise RuntimeError("No job ID specified on commandline or in config file.") 
 
-    if "include_only_items" in conffile:
-        if conffile["include_only_items"] is None:
+        if cli_job_name is not None:
+            cf["job_name"] = cli_job_name
+        elif "name" in conffile:
+            cf["job_name"] = conffile["name"]
+        else:
+            cf["job_name"] = cf["job_id"]
+
+        # Paths and directories 
+
+        # Paths for local_base and shell_base will usually be the same in a 
+        # POSIX-like environment.
+        # They differ in a Windows environment where the local_base may begin with
+        # Windows drive letters, e.g., "C:/Users/..." and the shell_base may be 
+        # translated to a POSIX-compatible format, e.g., "/mnt/c/Users/...".
+        if "local_base" in conffile:
+            local_base = conffile["local_base"]
+        else:
+            local_base = ""
+
+        if cli_batch_def_path is not None:
+            batch_def_path = cli_batch_def_path
+        else:
+            #  "def_path" is required if not specified on the command line
+            batch_def_path = local_base + conffile["def_path"]
+
+        if "shell_base" in conffile:
+            shell_base = conffile["shell_base"]
+        elif "mnt_base" in conffile:
+            shell_base = conffile["mnt_base"]
+        else:
+            shell_base = local_base
+
+        # "results_dir" is required
+        results_dir = local_base + conffile["results_dir"]
+        shell_results_dir = shell_base + conffile["results_dir"]
+        
+        # "media_dir" is required
+        cf["media_dir"] = local_base + conffile["media_dir"]
+        cf["shell_media_dir"] = shell_base + conffile["media_dir"]
+
+        if "mmif_dir" in conffile:
+            cf["mmif_dir"] = local_base + conffile["mmif_dir"]
+            cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
+        else:
+            mmif_dir_name = "mmif"
+            cf["mmif_dir"] = results_dir + "/" + mmif_dir_name 
+            cf["shell_mmif_dir"] = shell_results_dir + "/" + mmif_dir_name 
+
+        if "logs_dir" in conffile:
+            cf["logs_dir"] = local_base + conffile["logs_dir"]
+        else:
+            cf["logs_dir"] = results_dir
+
+        # Checks to make sure directories and setup file exist
+        for dirpath in [results_dir, cf["logs_dir"], cf["media_dir"], batch_def_path]:
+            if not os.path.exists(dirpath):
+                raise FileNotFoundError("Path does not exist: " + dirpath)
+
+
+        # Additional configuration options
+        if "media_required" in conffile:
+            cf["media_required"] = conffile["media_required"]
+        else:
+            cf["media_required"] = True
+
+        if cli_just_get_media:
+            cf["just_get_media"] = True
+        elif "just_get_media" in conffile:
+            cf["just_get_media"] = conffile["just_get_media"]
+        else:
+            cf["just_get_media"] = False
+
+        if "start_after_item" in conffile:
+            cf["start_after_item"] = conffile["start_after_item"]
+        else:
+            cf["start_after_item"] = 0
+
+        if "end_after_item" in conffile:
+            if conffile["end_after_item"] == "":
+                cf["end_after_item"] = None
+            elif conffile["end_after_item"] is None:
+                cf["end_after_item"] = None
+            else:
+                cf["end_after_item"] = conffile["end_after_item"]
+        else:
+            cf["end_after_item"] = None
+
+        if "include_only_items" in conffile:
+            if conffile["include_only_items"] is None:
+                cf["include_only_items"] = None
+            else:
+                beg = cf["start_after_item"] if cf["start_after_item"] else 0
+                end = cf["end_after_item"] if cf["end_after_item"] else 999999
+                cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
+        else:
             cf["include_only_items"] = None
+
+        if "overwrite_mmif" in conffile:
+            cf["overwrite_mmif"] = conffile["overwrite_mmif"]
         else:
-            beg = cf["start_after_item"] if cf["start_after_item"] else 0
-            end = cf["end_after_item"] if cf["end_after_item"] else 999999
-            cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
-    else:
-        cf["include_only_items"] = None
+            cf["overwrite_mmif"] = False
 
-    if "overwrite_mmif" in conffile:
-        cf["overwrite_mmif"] = conffile["overwrite_mmif"]
-    else:
-        cf["overwrite_mmif"] = False
-
-    if "cleanup_media_per_item" in conffile:
-        cf["cleanup_media_per_item"] = conffile["cleanup_media_per_item"]
-    else:
-        cf["cleanup_media_per_item"] = False
-    
-    if "cleanup_beyond_item" in conffile:
-        cf["cleanup_beyond_item"] = conffile["cleanup_beyond_item"]
-    else:
-        cf["cleanup_beyond_item"] = 0
-
-    if "filter_warnings" in conffile:
-        warnings.filterwarnings(conffile["filter_warnings"])
-    else:
-        warnings.filterwarnings("ignore")
-
-
-    # CLAMS config
-
-    if "clams_run_cli" in conffile:
-        clams["run_cli"] = conffile["clams_run_cli"]
-    elif cf["just_get_media"]:
-        clams["run_cli"] = False
-    else:
-        clams["run_cli"] = True
-    
-    if "clams_run_cli_gpu" in conffile:
-        clams["run_cli_gpu"] = conffile["clams_run_cli_gpu"]
-    else:
-        clams["run_cli_gpu"] = False
-
-    if cf["just_get_media"]:
-        clams["num_stages"] = 0
-        clams["endpoints"] = clams["images"] = clams["param_sets"] = []
-    else:
-        if not clams["run_cli"]:
-            # need to know the URLs of the webservices if (but only if) not running
-            # in CLI mode 
-            clams["endpoints"] = conffile["clams_endpoints"]
-            clams["images"] = []
-            clams["num_stages"] = len(clams["endpoints"])
+        if "cleanup_media_per_item" in conffile:
+            cf["cleanup_media_per_item"] = conffile["cleanup_media_per_item"]
         else:
-            # need to know the docker image if (but only if) running in CLI mode
-            clams["images"] = conffile["clams_images"]
-            clams["endpoints"] = []
-            clams["num_stages"] = len(clams["images"])
-
-        if "clams_params" in conffile:
-            clams["param_sets"] = conffile["clams_params"]
+            cf["cleanup_media_per_item"] = False
+        
+        if "cleanup_beyond_item" in conffile:
+            cf["cleanup_beyond_item"] = conffile["cleanup_beyond_item"]
         else:
-            clams["param_sets"] = []
+            cf["cleanup_beyond_item"] = 0
 
-    if len(clams["param_sets"]) != clams["num_stages"]:
-        raise RuntimeError("Number of CLAMS stages not equal to number of sets of CLAMS params.") 
-
-
-    # Post-processing configuration options
-
-    if "post_proc" in conffile:
-        # just one post process defined in conffile
-        if not isinstance( conffile["post_proc"], dict):
-            raise RuntimeError("Value for `post_proc` must be a dict.")
+        if "filter_warnings" in conffile:
+            warnings.filterwarnings(conffile["filter_warnings"])
         else:
-            post_procs = [ conffile["post_proc"] ]
-    elif "post_procs" in conffile:
-        # list of post processes defined in conffile
-        if not isinstance( conffile["post_procs"], list):
-            raise RuntimeError("Value for `post_procs` must be a list.")
+            warnings.filterwarnings("ignore")
+
+
+        # CLAMS config
+
+        if "clams_run_cli" in conffile:
+            clams["run_cli"] = conffile["clams_run_cli"]
+        elif cf["just_get_media"]:
+            clams["run_cli"] = False
         else:
-            post_procs = conffile["post_procs"] 
+            clams["run_cli"] = True
+        
+        if "clams_run_cli_gpu" in conffile:
+            clams["run_cli_gpu"] = conffile["clams_run_cli_gpu"]
+        else:
+            clams["run_cli_gpu"] = False
+
+        if cf["just_get_media"]:
+            clams["num_stages"] = 0
+            clams["endpoints"] = clams["images"] = clams["param_sets"] = []
+        else:
+            if not clams["run_cli"]:
+                # need to know the URLs of the webservices if (but only if) not running
+                # in CLI mode 
+                clams["endpoints"] = conffile["clams_endpoints"]
+                clams["images"] = []
+                clams["num_stages"] = len(clams["endpoints"])
+            else:
+                # need to know the docker image if (but only if) running in CLI mode
+                clams["images"] = conffile["clams_images"]
+                clams["endpoints"] = []
+                clams["num_stages"] = len(clams["images"])
+
+            if "clams_params" in conffile:
+                clams["param_sets"] = conffile["clams_params"]
+            else:
+                clams["param_sets"] = []
+
+        if len(clams["param_sets"]) != clams["num_stages"]:
+            raise RuntimeError("Number of CLAMS stages not equal to number of sets of CLAMS params.") 
+
+
+        # Post-processing configuration options
+
+        if "post_proc" in conffile:
+            # just one post process defined in conffile
+            if not isinstance( conffile["post_proc"], dict):
+                raise RuntimeError("Value for `post_proc` must be a dict.")
+            else:
+                post_procs = [ conffile["post_proc"] ]
+        elif "post_procs" in conffile:
+            # list of post processes defined in conffile
+            if not isinstance( conffile["post_procs"], list):
+                raise RuntimeError("Value for `post_procs` must be a list.")
+            else:
+                post_procs = conffile["post_procs"] 
+        else:
+            post_procs = []
+
+        if len(post_procs) > 0:
+            # directory for all artifacts (not including MMIF files)
+            cf["artifacts_dir"] = results_dir + "/" + "artifacts"
+        else:
+            cf["artifacts_dir"] = None
+
+    except KeyError as e:
+        print("Invalid configuration file at", job_conf_path)
+        print("Error for expected key:", e)
+        raise SystemExit from e
+
+    except FileNotFoundError as e:
+        print("Required directory or file not found")
+        print("File not found error:", e)
+        raise SystemExit from e
+
+    except RuntimeError as e:
+        print("Failed to configure job")
+        print("Runtime Error:", e)
+        raise SystemExit from e
+
+
+    ############################################################################
+    # Check and/or create directories for job output
+
+    # Create list of dirs to create/validate
+    dirs = [ cf["mmif_dir"] ]
+
+    if cf["artifacts_dir"]:
+        dirs.append(cf["artifacts_dir"])
+
+        for post_proc in post_procs:
+            if "artifacts" in post_proc and len(post_proc["artifacts"]) > 0:
+                # subdirectories for types of artifacts
+                for arttype in post_proc["artifacts"]:
+                    artdir = cf["artifacts_dir"] + "/" + arttype
+                    dirs.append(artdir)
+
+    # Checks to make sure these directories exist
+    # If directories do not exist, then create them
+    for dirpath in dirs:
+        if os.path.exists(dirpath):
+            print("Found existing directory: " + dirpath)
+        else:
+            print("Creating directory: " + dirpath)
+            os.mkdir(dirpath)
+
+
+    ############################################################################
+    # Configure batch
+
+    # Open the batch spreadsheet as a list of dictionaries
+    # (But we'll restrict this list based on the configuration.)
+    with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
+        batch_l = list(csv.DictReader(csvfile))
+
+    # Add a human-readable item index to the batch list
+    # (This will be used for filtering and logging.)
+    for index, item in enumerate(batch_l, start=1):
+        item["item_num"] = index
+
+    # Re-set last item according to the length of the batch list
+    if cf["end_after_item"] is None:
+        cf["end_after_item"] = len(batch_l)
+    elif cf["end_after_item"] < cf["start_after_item"]:
+        cf["end_after_item"] = cf["start_after_item"]
+    elif cf["end_after_item"] > len(batch_l):
+        cf["end_after_item"] = len(batch_l)
+
+    # restrict the batch to the appropriate range
+    batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
+
+    # Filter the batch just to specified items (if specified)
+    if cf["include_only_items"] is not None:
+        batch_l = [ item for item in batch_l if item["item_num"] in cf["include_only_items"] ]
+
+    print()
+    print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
+    if cf["include_only_items"] is not None:
+        print(f'Will omit all items except those specified: {cf["include_only_items"]}.')
+    print("Total items:", len(batch_l))
+
+
+    ############################################################################
+    # Main loop
+
+    # Like batch_l, but this list accumulates each item that has been tried
+    tried_l = []
+
+    print("Starting processing...")
+
+    for batch_item in batch_l:
+        run_item( batch_item, cf, clams, post_procs, tried_l) 
+    ############################################################################
+
+
+    ############################################################################
+    # Cleanup after all items have been processed 
+    tn = datetime.datetime.now()
+
+    num_tries = len( tried_l )
+    num_skips = len( [item for item in tried_l if item["skip_reason"] not in [""]] )
+    num_errors = len( [item for item in tried_l if len(item["errors"]) > 0 ] )
+    num_problems = len( [item for item in tried_l if len(item["problems"]) > 0 ] )
+
+    print()
+    print("****************************")
+    print()
+    if num_tries == len(batch_l):
+        print(f"Processed {num_tries} items.")
     else:
-        post_procs = []
+        print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {num_tries} attempted items.")
+    print(num_skips, "out of", num_tries, "items were skipped.")
+    print(num_errors, "out of", num_tries, "items had errors.")
+    print(num_problems, "out of", num_tries, "items had problems.")
 
-    if len(post_procs) > 0:
-        # directory for all artifacts (not including MMIF files)
-        cf["artifacts_dir"] = results_dir + "/" + "artifacts"
-    else:
-        cf["artifacts_dir"] = None
+    print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
+    print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
+    print(f'Results logged in {cf["logs_dir"]}/')
+    print()
 
-except KeyError as e:
-    print("Invalid configuration file at", job_conf_path)
-    print("Error for expected key:", e)
-    raise SystemExit from e
-
-except FileNotFoundError as e:
-    print("Required directory or file not found")
-    print("File not found error:", e)
-    raise SystemExit from e
-
-except RuntimeError as e:
-    print("Failed to configure job")
-    print("Runtime Error:", e)
-    raise SystemExit from e
-
-
-#########################################################
-# Check and/or create directories for job output
-
-# Create list of dirs to create/validate
-dirs = [ cf["mmif_dir"] ]
-
-if cf["artifacts_dir"]:
-    dirs.append(cf["artifacts_dir"])
-
-    for post_proc in post_procs:
-        if "artifacts" in post_proc and len(post_proc["artifacts"]) > 0:
-            # subdirectories for types of artifacts
-            for arttype in post_proc["artifacts"]:
-                artdir = cf["artifacts_dir"] + "/" + arttype
-                dirs.append(artdir)
-
-# Checks to make sure these directories exist
-# If directories do not exist, then create them
-for dirpath in dirs:
-    if os.path.exists(dirpath):
-        print("Found existing directory: " + dirpath)
-    else:
-        print("Creating directory: " + dirpath)
-        os.mkdir(dirpath)
 
 
 ############################################################################
+# function for running items
 ############################################################################
-# Process batch in a loop
-############################################################################
-############################################################################
-
-# Open the batch spreadsheet as a list of dictionaries
-# (But we'll restrict this list based on the configuration.)
-with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
-    batch_l = list(csv.DictReader(csvfile))
-
-# Add a human-readable item index to the batch list
-# (This will be used for filtering and logging.)
-for index, item in enumerate(batch_l, start=1):
-    item["item_num"] = index
-
-# Re-set last item according to the length of the batch list
-if cf["end_after_item"] is None:
-    cf["end_after_item"] = len(batch_l)
-elif cf["end_after_item"] < cf["start_after_item"]:
-    cf["end_after_item"] = cf["start_after_item"]
-elif cf["end_after_item"] > len(batch_l):
-    cf["end_after_item"] = len(batch_l)
-
-# restrict the batch to the appropriate range
-batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
-
-# Filter the batch just to specified items (if specified)
-if cf["include_only_items"] is not None:
-    batch_l = [ item for item in batch_l if item["item_num"] in cf["include_only_items"] ]
-
-# Like batch_l, but accumulating each item that has been tried
-tried_l = []
-
-print()
-print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
-if cf["include_only_items"] is not None:
-    print(f'Will omit all items except those specified: {cf["include_only_items"]}.')
-print("Total items:", len(batch_l))
-print("Commencing job...")
-
-########################################################
-# Main loop
-for batch_item in batch_l:
+def run_item( batch_item, cf, clams, post_procs, tried_l) :
+    """Run a single item"""
 
     ti = datetime.datetime.now()
     tis = ti.strftime("%Y-%m-%d %H:%M:%S")
 
     item = batch_item.copy()
-    item_num = item["item_num"]
 
     # initialize new dictionary elements for this item
     item["skip_reason"] = ""
@@ -502,7 +549,7 @@ for batch_item in batch_l:
     print()
     print()
     print("  *  ")
-    print(f'* * *  ITEM # {item_num} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
+    print(f'* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
     print("  *  ")
 
     ########################################################
@@ -542,7 +589,7 @@ for batch_item in batch_l:
             item["skip_reason"] = "media"
             tried_l.append(item)
             write_tried_log(cf, tried_l)
-            continue
+            return
 
         if cf["just_get_media"]:
             print()
@@ -552,7 +599,7 @@ for batch_item in batch_l:
             write_tried_log(cf, tried_l)
 
             # continue to next iteration without additional steps
-            continue
+            return
 
 
     ########################################################
@@ -591,7 +638,7 @@ for batch_item in batch_l:
                 item["skip_reason"] = f"mmif-{mmifi}-prereq"
                 tried_l.append(item)
                 write_tried_log(cf, tried_l)
-                continue
+                return
             else:
                 print("Prerequisites passed.")
 
@@ -625,7 +672,7 @@ for batch_item in batch_l:
             cleanup_media(cf, item)
             tried_l.append(item)
             write_tried_log(cf, tried_l)
-            continue
+            return
 
 
     #############################################################
@@ -719,7 +766,7 @@ for batch_item in batch_l:
                 except Exception as e:
                     print("Encountered exception:", e)
                     print("Failed to get a response from the CLAMS web service.")
-                    print("Check CLAMS web service and resume before batch item:", item_num)
+                    print("Check CLAMS web service and resume before batch item:", item["item_num"])
                     raise SystemExit("Exiting script.") from e
 
                 print("CLAMS app web serivce response code:", response.status_code)
@@ -835,7 +882,7 @@ for batch_item in batch_l:
         cleanup_media(cf, item)
         tried_l.append(item)
         write_tried_log(cf, tried_l)
-        continue
+        return
 
 
     ########################################################
@@ -860,7 +907,7 @@ for batch_item in batch_l:
             item["skip_reason"] = "usemmif-prereq"
             tried_l.append(item)
             write_tried_log(cf, tried_l)
-            continue
+            return
         else:
             print("Step prerequisites passed.")
 
@@ -918,26 +965,5 @@ for batch_item in batch_l:
 ########################################################
 
 
-tn = datetime.datetime.now()
-
-num_tries = len( tried_l )
-num_skips = len( [item for item in tried_l if item["skip_reason"] not in [""]] )
-num_errors = len( [item for item in tried_l if len(item["errors"]) > 0 ] )
-num_problems = len( [item for item in tried_l if len(item["problems"]) > 0 ] )
-
-print()
-print("****************************")
-print()
-if num_tries == len(batch_l):
-    print(f"Processed {num_tries} items.")
-else:
-    print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {num_tries} attempted items.")
-print(num_skips, "out of", num_tries, "items were skipped.")
-print(num_errors, "out of", num_tries, "items had errors.")
-print(num_problems, "out of", num_tries, "items had problems.")
-
-print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
-print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-print(f'Results logged in {cf["logs_dir"]}/')
-print()
-
+if __name__ == "__main__":
+    main()
