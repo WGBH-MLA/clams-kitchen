@@ -4,22 +4,24 @@ run_job.py
 This script runs CLAMS applications against a batch of assets by looping through 
 the items in the batch, taking several steps with each one.  
 
-It uses several data structures that are global for this module.
+It uses several data structures that are passed around this module.
 
 `cf` - the job configuration dictionary. Most of the values are set by the 
 job configuration file.  Some can be set from the command line.  Some
-are calculated at the beginning of the job.  It has the following keys:
+are calculated at the beginning of the job.  The dictionary keys are as follows,
+with the corresponding configuration file key in brackets.
    - start_timestamp (str)
-   - job_id (str) 
-   - job_name (str) 
+   - job_id (str)                        ["id"]
+   - job_name (str)                      ["name"]
    - logs_dir (str)    
-   - just_get_media (bool)
-   - start_after_item (int)
-   - end_after_item (int)
-   - include_only_items (list of ints)
-   - overwrite_mmif (bool)
-   - cleanup_media_per_item (bool)
-   - cleanup_beyond_item (int)
+   - just_get_media (bool)               ["just_get_media"]
+   - start_after_item (int)              ["start_after_item"]
+   - end_after_item (int)                ["end_after_item"]
+   - include_only_items (list of ints)   ["include_only_items"]
+   - overwrite_mmif (bool)               ["overwrite_mmif"]
+   - cleanup_media_per_item (bool)       [cleanup_media_per_item"]
+   - cleanup_beyond_item (int)           ["cleanup_beyond_item"]
+   - parallel (int)                      ["parallel"]
    - artifacts_dir (str)
    - media_dir (str)
    - shell_media_dir (str)
@@ -69,8 +71,10 @@ import datetime
 import warnings
 import subprocess
 import argparse
-import requests
 import logging
+import multiprocessing as mp
+
+import requests
 
 import visaid_builder.post_proc_item
 
@@ -91,6 +95,10 @@ def write_tried_log(cf, tried_l):
     """Write a "runlog" of tried items.
     Write out both CSV and JSON versions."""
 
+    # Conversion may be necessary if object passed in was a ListProxy instead of
+    # plain list
+    log_l = list(tried_l)
+
     # Results files get a new name every time this script is run
     job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
                                     "_" + cf["start_timestamp"] + "_runlog" )
@@ -98,22 +106,22 @@ def write_tried_log(cf, tried_l):
     job_results_log_json_path  = job_results_log_file_base + ".json"
 
     with open(job_results_log_csv_path, 'w', newline='') as file:
-        fieldnames = tried_l[0].keys()
+        fieldnames = log_l[0].keys()
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(tried_l)
+        writer.writerows(log_l)
     
     with open(job_results_log_json_path, 'w') as file:
-        json.dump(tried_l, file, indent=2)
+        json.dump(log_l, file, indent=2)
 
 
 def cleanup_media(cf, item):
-    """Cleanup media, i.e., remove media file for this item
-    Do this only if the global settings allow it
+    """Cleanup media, i.e., remove media file for this item.
+    (Do the cleanup only if it is permitted by the configuration settings!)
     """
     
     print()
-    print("# CLEANING UP MEDIA")
+    print(f'# CLEANING UP MEDIA [#{item["item_num"]}]')
 
     if not cf["media_required"]:
         print("Job declared media was not required.  Will not attempt to clean up.")
@@ -130,7 +138,7 @@ def cleanup_media(cf, item):
 # main function
 ############################################################################
 def main():
-    """Reads commandline arguments and input files, and sets up job"""
+    """Reads commandline arguments and input files, sets up job, manages batch running."""
 
     # get the time when the job began
     t0 = datetime.datetime.now()
@@ -337,6 +345,11 @@ def main():
         else:
             warnings.filterwarnings("ignore")
 
+        if "parallel" in conffile:
+            cf["parallel"] = conffile["parallel"]
+        else:
+            cf["parallel"] = 0
+
 
         # CLAMS config
 
@@ -478,15 +491,42 @@ def main():
 
 
     ############################################################################
-    # Main loop
+    # Main loop or processing pool
 
-    # Like batch_l, but this list accumulates each item that has been tried
-    tried_l = []
+    print("Will start processing.")
+    print()
 
-    print("Starting processing...")
+    if cf["parallel"] == 0:
+        print(f'Will process items serially...')
+        tried_l = []
+        for batch_item in batch_l:
+            run_item( batch_item, cf, clams, post_procs, tried_l, None) 
 
-    for batch_item in batch_l:
-        run_item( batch_item, cf, clams, post_procs, tried_l) 
+    else:
+        print(f'Will process {cf["parallel"]} items in parallel...')
+
+        with mp.Manager() as manager:
+            # The `tried_l` variable will be an object shared by processes, so each process 
+            # can append records to it.
+            tried_l = manager.list()
+            l_lock = manager.Lock()
+
+            # Collection of items returned from each run.  Should have the same items as 
+            # tried_l, after the end of the run.
+            # (Not currently used.)
+            end_l = []
+            
+            # Distribute the job to the specified number of worker processes
+            # (`chunksize=1` ensures processing in order, to the extent possible.)
+            with mp.Pool(cf["parallel"]) as pool:
+                end_l = pool.starmap( run_item, 
+                                      [ (batch_item, cf, clams, post_procs, tried_l, l_lock) 
+                                        for batch_item in batch_l ], 
+                                      chunksize=1 )
+            # convert `tried_l` to a normal list
+            tried_l = list(tried_l)
+
+    # End of main loop or processing pool
     ############################################################################
 
 
@@ -518,14 +558,26 @@ def main():
 
 
 ############################################################################
-# function for running items
+# primary item-level function (for running each item)
 ############################################################################
-def run_item( batch_item, cf, clams, post_procs, tried_l) :
+def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     """Run a single item"""
 
+    # record item start time
     ti = datetime.datetime.now()
     tis = ti.strftime("%Y-%m-%d %H:%M:%S")
 
+
+    def update_tried( item, cf, tried_l, l_lock):
+        """Helper function to reduce code repetition"""
+        if l_lock is not None:
+            with l_lock: 
+                tried_l.append(item)
+        else:
+            tried_l.append(item)
+        write_tried_log(cf, tried_l)
+
+    # don't change or add to the item passed in.  
     item = batch_item.copy()
 
     # initialize new dictionary elements for this item
@@ -557,7 +609,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
     # and update the dictionary
 
     print()
-    print("# MEDIA AVAILABILITY")
+    print(f'# MEDIA AVAILABILITY [#{item["item_num"]}]')
 
     if not cf["media_required"]:
         print("Media declared not required.")
@@ -587,19 +639,16 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
             print("Media file for " + item["asset_id"] + " could not be made available.")
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "media"
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-            return
+            update_tried( item, cf, tried_l, l_lock)
+            return item
 
         if cf["just_get_media"]:
+            # just update log and continue to next iteration without additional steps
             print()
             print("Media acquisition successful.")
             # Update results (so we have a record of any failures)
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-
-            # continue to next iteration without additional steps
-            return
+            update_tried( item, cf, tried_l, l_lock)
+            return item
 
 
     ########################################################
@@ -607,7 +656,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
     # (create MMIF 0)
 
     print()
-    print("# MAKING BLANK MMIF")
+    print(f'# MAKING BLANK MMIF [#{item["item_num"]}]')
     mmifi += 1
 
     if not cf["media_required"]:
@@ -636,9 +685,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
                 print("Prerequisite failed:  Media required and no media filename recorded.")
                 print("SKIPPING", item["asset_id"])
                 item["skip_reason"] = f"mmif-{mmifi}-prereq"
-                tried_l.append(item)
-                write_tried_log(cf, tried_l)
-                return
+                update_tried( item, cf, tried_l, l_lock)
+                return item
             else:
                 print("Prerequisites passed.")
 
@@ -670,9 +718,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = f"mmif-{mmifi}"
             cleanup_media(cf, item)
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-            return
+            update_tried( item, cf, tried_l, l_lock)
+            return item
 
 
     #############################################################
@@ -680,7 +727,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
     # (create MMIF 1 thru n)
 
     print()
-    print("# CREATING ANNOTATION-LADEN MMIF WITH CLAMS")
+    print(f'# CREATING ANNOTATION-LADEN MMIF WITH CLAMS [#{item["item_num"]}]')
 
     print("Will run", clams["num_stages"], "round(s) of CLAMS processing.")
     clams_failed = False
@@ -696,7 +743,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
         mmifi += 1
         clamsi = mmifi - 1
         print()
-        print("## Making MMIF #", mmifi)
+        print(f'## Making MMIF _{mmifi} [#{item["item_num"]}]')
 
         # Define MMIF for this step of the job
         mmif_filename = item["asset_id"] + "_" + cf["job_id"] + "_" + str(mmifi) + ".mmif"
@@ -880,9 +927,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
         print("SKIPPING", item["asset_id"])
         item["skip_reason"] = f"mmif-{mmifi}"
         cleanup_media(cf, item)
-        tried_l.append(item)
-        write_tried_log(cf, tried_l)
-        return
+        update_tried( item, cf, tried_l, l_lock)
+        return item
 
 
     ########################################################
@@ -890,7 +936,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
     # 
     
     print()
-    print("# POSTPROCESSING ANNOTATION-LADEN MMIF")
+    print(f'# POSTPROCESSING ANNOTATION-LADEN MMIF [#{item["item_num"]}]')
 
     if len(post_procs) == 0:
         print("No postprocessing procedures requested.  Will not postprocess.")
@@ -905,9 +951,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
             print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "usemmif-prereq"
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-            return
+            update_tried( item, cf, tried_l, l_lock)
+            return item
         else:
             print("Step prerequisites passed.")
 
@@ -953,15 +998,13 @@ def run_item( batch_item, cf, clams, post_procs, tried_l) :
     cleanup_media(cf, item)
 
     # Update results to reflect this iteration of the loop
-    tried_l.append(item)
-    write_tried_log(cf, tried_l)
+    update_tried( item, cf, tried_l, l_lock)
 
-    # print diag info
-    print()
-    print("Elapsed time for this item:", item["elapsed_seconds"], "seconds")
+    # print summary item info
+    print(f'Elapsed time for item # {item["item_num"]}:  {item["elapsed_seconds"]}s')
 
 
-# end of main processing loop
+# end of function for running items
 ########################################################
 
 
