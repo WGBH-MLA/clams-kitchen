@@ -15,6 +15,7 @@ with the corresponding configuration file key in brackets.
    - job_name (str)                      ["name"]
    - logs_dir (str)    
    - just_get_media (bool)               ["just_get_media"]
+   - media_required (bool)               ["media_required"]
    - start_after_item (int)              ["start_after_item"]
    - end_after_item (int)                ["end_after_item"]
    - include_only_items (list of ints)   ["include_only_items"]
