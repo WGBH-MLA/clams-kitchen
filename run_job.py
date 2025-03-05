@@ -574,9 +574,11 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         if l_lock is not None:
             with l_lock: 
                 tried_l.append(item)
+                write_tried_log(cf, tried_l)
         else:
             tried_l.append(item)
-        write_tried_log(cf, tried_l)
+            write_tried_log(cf, tried_l)
+        
 
     # don't change or add to the item passed in.  
     item = batch_item.copy()
