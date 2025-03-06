@@ -264,10 +264,15 @@ def main():
         # "results_dir" is required
         results_dir = local_base + conffile["results_dir"]
         shell_results_dir = shell_base + conffile["results_dir"]
-        
-        # "media_dir" is required
-        cf["media_dir"] = local_base + conffile["media_dir"]
-        cf["shell_media_dir"] = shell_base + conffile["media_dir"]
+
+        # "media_dir" is required unless media is not required        
+        if "media_required" in conffile:
+            cf["media_required"] = conffile["media_required"]
+        else:
+            cf["media_required"] = True
+        if cf["media_required"] or "media_dir" in conffile:
+            cf["media_dir"] = local_base + conffile["media_dir"]
+            cf["shell_media_dir"] = shell_base + conffile["media_dir"]
 
         if "mmif_dir" in conffile:
             cf["mmif_dir"] = local_base + conffile["mmif_dir"]
@@ -283,17 +288,14 @@ def main():
             cf["logs_dir"] = results_dir
 
         # Checks to make sure directories and setup file exist
-        for dirpath in [results_dir, cf["logs_dir"], cf["media_dir"], batch_def_path]:
+        for dirpath in [results_dir, cf["logs_dir"], batch_def_path]:
             if not os.path.exists(dirpath):
                 raise FileNotFoundError("Path does not exist: " + dirpath)
+        if cf["media_required"] and not os.path.exists(cf["media_dir"]):
+            raise FileNotFoundError("Path does not exist: " + cf["media_dir"])
 
 
         # Additional configuration options
-        if "media_required" in conffile:
-            cf["media_required"] = conffile["media_required"]
-        else:
-            cf["media_required"] = True
-
         if cli_just_get_media:
             cf["just_get_media"] = True
         elif "just_get_media" in conffile:
@@ -858,13 +860,13 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 coml = [
                         docker_bin_path, 
                         "run",
-                        "-v",
-                        cf["shell_media_dir"] + '/:/data',
-                        "-v",
-                        cf["shell_mmif_dir"] + '/:/mmif',
                         "-i",
-                        "--rm"
+                        "--rm",
+                        "-v",
+                        cf["shell_mmif_dir"] + '/:/mmif'
                     ]
+                if cf["media_required"]:
+                    coml += [ "-v", cf["shell_media_dir"] + '/:/data' ]
                 if clams["run_cli_gpu"]:
                     coml += [ "--gpus", "all" ]
                 coml += [
@@ -950,7 +952,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         if ('laden' not in mmif_status or 'error-views' in mmif_status):
             # prereqs not satisfied
             # print error messages, update results, continue to next loop iteration
-            mmif_check(mmif_path, complain=True)
+            mmif_check(item["mmif_paths"][mmifi], complain=True)
             print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
             print("SKIPPING", item["asset_id"])
             item["skip_reason"] = "usemmif-prereq"
