@@ -589,6 +589,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     item["skip_reason"] = ""
     item["errors"] = []
     item["problems"] = []
+    item["infos"] = []
     item["media_filename"] = ""
     item["media_path"] = ""
     item["mmif_files"] = []
@@ -972,7 +973,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 # Call separate procedure for appropraite post-processing
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
-                    pp_errors, pp_problems = visaid_builder.post_proc_item.run_post(
+                    pp_errors, pp_problems, pp_infos = visaid_builder.post_proc_item.run_post(
                         item=item, 
                         cf=cf,
                         params=post_proc )
@@ -986,6 +987,9 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         print("Warning:", post_proc["name"], "encountered problems:", pp_problems)
                         item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
                         print("PROCEEDING.")
+
+                    if pp_infos not in [ None, [] ]:
+                        item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
 
                 else:
                     print("Invalid postprocessing procedure:", post_proc)
