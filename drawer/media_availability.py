@@ -38,7 +38,7 @@ def extract_filename_ci_url(url:str, ci_id:str) -> str:
         print("Warning: SonyCi URL does not include 'cpb-aacip'.")
         
         # can't find filename by looking for the GUID;
-        # rely on assumptions about the strucutre of the URL
+        # rely on assumptions about the structure of the URL
         start_index = url.find(ci_id) + 33
         if start_index == -1:
             print("Failure: Media filename not found in SonyCi URL.")
@@ -51,10 +51,15 @@ def extract_filename_ci_url(url:str, ci_id:str) -> str:
     if end_index == -1:
         print("Failure: Could not find the end of the filename in the URL.")
         print("URL: <" + url + ">") 
-        return None;
+        return None
 
     filename = url[start_index:end_index]
-    return(filename)
+
+    if filename.lower().find("fake_proxy") > -1:
+        print(f"Failure: SonyCi returned the file `{filename}` for this item.")
+        return None
+
+    return filename 
 
 # %%
 def remove_media(file_path:str) -> bool:
