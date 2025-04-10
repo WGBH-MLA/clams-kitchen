@@ -77,8 +77,8 @@ import multiprocessing as mp
 
 import requests
 
+import runlog_sum
 import visaid_builder.post_proc_item
-
 from drawer.media_availability import check_avail, make_avail, remove_media
 from drawer.mmif_adjunct import make_blank_mmif, mmif_check
 
@@ -536,28 +536,23 @@ def main():
     ############################################################################
     # Cleanup after all items have been processed 
     tn = datetime.datetime.now()
-
-    num_tries = len( tried_l )
-    num_skips = len( [item for item in tried_l if item["skip_reason"] not in [""]] )
-    num_errors = len( [item for item in tried_l if len(item["errors"]) > 0 ] )
-    num_problems = len( [item for item in tried_l if len(item["problems"]) > 0 ] )
-
     print()
     print("****************************")
     print()
-    if num_tries == len(batch_l):
-        print(f"Processed {num_tries} items.")
-    else:
-        print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {num_tries} attempted items.")
-    print(num_skips, "out of", num_tries, "items were skipped.")
-    print(num_errors, "out of", num_tries, "items had errors.")
-    print(num_problems, "out of", num_tries, "items had problems.")
-
     print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
     print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
     print(f'Results logged in {cf["logs_dir"]}/')
     print()
+    print()
+    print("****************************")
+    print()
 
+    if len(tried_l) == len(batch_l):
+        print(f"Processed {len(tried_l)} items.")
+    else:
+        print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {len(tried_l)} attempted items.")
+
+    runlog_sum.print_simple_summary(tried_l)
 
 
 ############################################################################
