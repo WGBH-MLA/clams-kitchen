@@ -7,3 +7,7 @@ buffet
 .vscode
 __pycache__
 drawer/__pycache__
+.venv
+kvenv
+kvenv_wsl
+
