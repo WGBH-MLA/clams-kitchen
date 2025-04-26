@@ -26,6 +26,7 @@ with the corresponding configuration file key in brackets.
    - artifacts_dir (str)
    - media_dir (str)
    - shell_media_dir (str)
+   - shell_cache_dir (str)
    - mmif_dir (str)
    - shell_mmif_dir (str)
 
@@ -236,36 +237,47 @@ def main():
         else:
             cf["job_name"] = cf["job_id"]
 
+
         # Paths and directories 
 
+        # Explanation of `local_base` vs `shell_base`
+        # 
+        # These are the bases of file paths used by clams-kitchen.
+        #
         # Paths for local_base and shell_base will usually be the same in a 
         # POSIX-like environment.
         # They differ in a Windows environment where the local_base may begin with
         # Windows drive letters, e.g., "C:/Users/..." and the shell_base may be 
         # translated to a POSIX-compatible format, e.g., "/mnt/c/Users/...".
+        # 
+        # Paths beginning with the shell_base are used for running the Docker (and
+        # perhaps anything else that involves `subprocess.run`).
+
+        # Begin by establishing the local_base
+        # In a POSIX-like environment, this is the main thing we need.
         if "local_base" in conffile:
             local_base = conffile["local_base"]
         else:
             local_base = ""
 
-        if cli_batch_def_path is not None:
-            batch_def_path = cli_batch_def_path
-        else:
-            #  "def_path" is required if not specified on the command line
-            batch_def_path = local_base + conffile["def_path"]
-
+        # Set the shell_base 
+        # (May either match or diverge from local_base)
         if "shell_base" in conffile:
             shell_base = conffile["shell_base"]
-        elif "mnt_base" in conffile:
+        elif "mnt_base" in conffile:  
+            # deprecated way to specify shell_base
             shell_base = conffile["mnt_base"]
         else:
             shell_base = local_base
 
-        # "results_dir" is required
-        results_dir = local_base + conffile["results_dir"]
-        shell_results_dir = shell_base + conffile["results_dir"]
+        # Path to batch definition file
+        if cli_batch_def_path is not None:
+            batch_def_path = cli_batch_def_path
+        else:
+            #  `def_path` is required if not specified on the command line
+            batch_def_path = local_base + conffile["def_path"]
 
-        # "media_dir" is required unless media is not required        
+        # `media_dir` is required unless media is not required        
         if "media_required" in conffile:
             cf["media_required"] = conffile["media_required"]
         else:
@@ -273,15 +285,26 @@ def main():
         if cf["media_required"] or "media_dir" in conffile:
             cf["media_dir"] = local_base + conffile["media_dir"]
             cf["shell_media_dir"] = shell_base + conffile["media_dir"]
+        
+        # `cache_dir` is optional and is always relative to the `shell_base`
+        if "cache_dir" in conffile:
+            cf["shell_cache_dir"] = shell_base + conffile["cache_dir"]
+        else:
+            cf["shell_cache_dir"] = None
 
+        # `results_dir` is required
+        results_dir = local_base + conffile["results_dir"]
+        shell_results_dir = shell_base + conffile["results_dir"]
+
+        # If `mmif_dir` is not specified, create it and put it in the `results_dir`
         if "mmif_dir" in conffile:
             cf["mmif_dir"] = local_base + conffile["mmif_dir"]
             cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
         else:
-            mmif_dir_name = "mmif"
-            cf["mmif_dir"] = results_dir + "/" + mmif_dir_name 
-            cf["shell_mmif_dir"] = shell_results_dir + "/" + mmif_dir_name 
+            cf["mmif_dir"] = results_dir + "/mmif"
+            cf["shell_mmif_dir"] = shell_results_dir + "/mmif"
 
+        # If `logs_dir` is not specified, just use `results_dir`
         if "logs_dir" in conffile:
             cf["logs_dir"] = local_base + conffile["logs_dir"]
         else:
@@ -553,6 +576,7 @@ def main():
         print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {len(tried_l)} attempted items.")
 
     runlog_sum.print_simple_summary(tried_l)
+    print()
 
 
 ############################################################################
@@ -863,6 +887,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     ]
                 if cf["media_required"]:
                     coml += [ "-v", cf["shell_media_dir"] + '/:/data' ]
+                if cf["shell_cache_dir"]:
+                    coml += [ "-v", cf["shell_cache_dir"] + '/:/cache' ]
                 if clams["run_cli_gpu"]:
                     coml += [ "--gpus", "all" ]
                 coml += [
