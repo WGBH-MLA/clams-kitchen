@@ -32,11 +32,10 @@ with the corresponding configuration file key in brackets.
 
 `clams` - CLAMS-specific configuration dictionary. The values are set by the 
 job configuration file.  It has the following keys:
-   - run_cli (bool) indicating whether to run CLAMS apps as CLI or web service   
-   - run_cli_gpu (bool) indicating whether to call Docker with GPU (cuda) enabled
-   - endpoints (list) URLS for web service endpoints for CLAMS apps
-   - images (list) names for Docker images for CLAMS apps 
+   - apps (list of dicts) each dict with a single key of "image" or "endpoint" 
+         and the relevant Docker image or web service endpoint as the value
    - param_sets (list of dicts) each with parameters for a CLAMS app
+   - run_cli_gpu (bool) indicating whether to call Docker with GPU (cuda) enabled
 
 `post_procs` - a list of dicts each with the parameters for a post-process
 
@@ -379,41 +378,52 @@ def main():
 
         # CLAMS config
 
-        if "clams_run_cli" in conffile:
-            clams["run_cli"] = conffile["clams_run_cli"]
-        elif cf["just_get_media"]:
-            clams["run_cli"] = False
+        # First, set the apps list
+        clams["apps"] = clams["param_sets"] = []
+        if "clams_apps" in conffile:
+            # Check for valid values
+            for app in conffile["clams_apps"]:
+                if not isinstance(app, dict) and len(app)!= 1:
+                    raise RuntimeError("CLAMS apps must be specified as single-item dictionaries.") 
+                elif not any(key in app for key in ["image", "endpoint"]):
+                    raise RuntimeError("CLAMS apps must have a key of 'image' or 'endpoint'.") 
+
+            clams["apps"] = conffile["clams_apps"]
+
+        elif any(key in conffile for key in ["clams_run_cli", "clams_images", "clams_endpoints"]):
+            # Handle deprecated configuration keys
+            cli_only = False
+            if "clams_run_cli" in conffile:
+                if conffile["clams_run_cli"]:
+                    cli_only = True
+
+            if "clams_images" in conffile or cli_only:
+                if "clams_images" in conffile:
+                    clams["apps"] = [ {"image": i} for i in conffile["clams_images"] ]
+            else:
+                if "clams_endpoints" in conffile:
+                    clams["apps"] = [ {"endpoint": e} for e in conffile["clams_endpoints"] ]
+
+        # Count the number of stages
+        clams["num_stages"] = len(clams["apps"])
+
+        # Set the parameter sets list
+        if "clams_params" in conffile:
+            clams["param_sets"] = conffile["clams_params"]
         else:
-            clams["run_cli"] = True
-        
+            # if parameters aren't specified, just use empty dictionaries for each app
+            clams["param_sets"] = [ {} for _ in clams["apps"] ] 
+
+        # Make sure we have the right number of parameter sets
+        if len(clams["param_sets"]) != clams["num_stages"]:
+            raise RuntimeError("Number of CLAMS apps not equal to number of sets of CLAMS params.") 
+         
+
+        # Let Docker use GPU when running in CLI mode
         if "clams_run_cli_gpu" in conffile:
             clams["run_cli_gpu"] = conffile["clams_run_cli_gpu"]
         else:
             clams["run_cli_gpu"] = False
-
-        if cf["just_get_media"]:
-            clams["num_stages"] = 0
-            clams["endpoints"] = clams["images"] = clams["param_sets"] = []
-        else:
-            if not clams["run_cli"]:
-                # need to know the URLs of the webservices if (but only if) not running
-                # in CLI mode 
-                clams["endpoints"] = conffile["clams_endpoints"]
-                clams["images"] = []
-                clams["num_stages"] = len(clams["endpoints"])
-            else:
-                # need to know the docker image if (but only if) running in CLI mode
-                clams["images"] = conffile["clams_images"]
-                clams["endpoints"] = []
-                clams["num_stages"] = len(clams["images"])
-
-            if "clams_params" in conffile:
-                clams["param_sets"] = conffile["clams_params"]
-            else:
-                clams["param_sets"] = []
-
-        if len(clams["param_sets"]) != clams["num_stages"]:
-            raise RuntimeError("Number of CLAMS stages not equal to number of sets of CLAMS params.") 
 
 
         # Post-processing configuration options
@@ -438,6 +448,9 @@ def main():
             cf["artifacts_dir"] = results_dir + "/" + "artifacts"
         else:
             cf["artifacts_dir"] = None
+
+
+    # Handle exceptions encountered during configuration
 
     except KeyError as e:
         print("Invalid configuration file at", job_conf_path)
@@ -810,10 +823,13 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             else:
                 print("Prerequisites passed.")
 
-            if not clams["run_cli"] :
+            # Check to see how we're running the CLAMS app and proceed accordingly
+            if "endpoint" in clams["apps"][clamsi]:
                 ################################################################
                 # Run CLAMS app, assuming the app is already running as a local web service
-                print("Sending request to CLAMS web service...")
+                endpoint = clams["apps"][clamsi]["endpoint"]
+
+                print("Sending request to a CLAMS web service at " + endpoint)
 
                 if len(clams["param_sets"][clamsi]) > 0:
                     # build querystring with parameters in job configuration
@@ -824,8 +840,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         qsp += str(clams["param_sets"][clamsi][p])
                         qsp += "&"
                     qsp = qsp[:-1] # remove trailing "&"
-                service = clams["endpoints"][clamsi]
-                endpoint = service + qsp
+                else:
+                    qsp = ""
+
+                uri = endpoint + qsp
 
                 headers = {'Accept': 'application/json'}
 
@@ -833,8 +851,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     mmif_str = file.read()
 
                 try:
-                    # actually run the CLAMS app
-                    response = requests.post(endpoint, headers=headers, data=mmif_str)
+                    # send request to the the CLAMS endpoint
+                    response = requests.post(uri, headers=headers, data=mmif_str)
                 except Exception as e:
                     print("Encountered exception:", e)
                     print("Failed to get a response from the CLAMS web service.")
@@ -857,10 +875,12 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         raise Exception("Tried to write MMIF, but failed.")
                     print("MMIF file created.")
 
-            else:
+            elif "image" in clams["apps"][clamsi]:
                 ################################################################
-                # Run CLAMS app by calling the Docker image
-                print("Attempting to call Dockerized CLAMS app CLI...")
+                # Run CLAMS app by running the Docker image
+                image = clams["apps"][clamsi]["image"]
+
+                print("Attempting to run a CLAMS Docker image: " + image)
 
                 input_mmif_filename = item["mmif_files"][mmifi-1]
                 output_mmif_filename = mmif_filename
@@ -892,7 +912,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 if clams["run_cli_gpu"]:
                     coml += [ "--gpus", "all" ]
                 coml += [
-                        clams["images"][clamsi],
+                        image,
                         "python",
                         "cli.py"
                     ]
