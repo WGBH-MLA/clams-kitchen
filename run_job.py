@@ -419,11 +419,24 @@ def main():
             raise RuntimeError("Number of CLAMS apps not equal to number of sets of CLAMS params.") 
          
 
-        # Let Docker use GPU when running in CLI mode
-        if "clams_run_cli_gpu" in conffile:
-            clams["run_cli_gpu"] = conffile["clams_run_cli_gpu"]
-        else:
-            clams["run_cli_gpu"] = False
+        # Each app specified as a Docker image can be run with the "--gpus" flag set to a 
+        # particular value.
+        # If this is not already specified in the config file, a default value can be given, to
+        # allow defaulting to "all" GPUS for apps for which the "gpus" is not already specified.
+        default_docker_gpus_all = False
+        if "docker_gpus_all" in conffile:
+            if conffile["clams_run_cli_gpu"]:
+                default_docker_gpus_all = True
+        elif "clams_run_cli_gpu" in conffile:
+            # deprecated conffile key
+            if conffile["clams_run_cli_gpu"]:
+                default_docker_gpus_all = True
+
+        # Set the gpus setting if not already set, on a per app basis
+        if default_docker_gpus_all:
+            for app in clams["apps"]:
+                if "image" in app and "gpus" not in app:
+                    app["gpus"] = "all"
 
 
         # Post-processing configuration options
@@ -570,17 +583,11 @@ def main():
 
 
     ############################################################################
-    # Cleanup after all items have been processed 
-    tn = datetime.datetime.now()
-    print()
-    print("****************************")
-    print()
-    print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
-    print("Total elapsed time:", (tn-t0).days, "days,", (tn-t0).seconds, "seconds")
-    print(f'Results logged in {cf["logs_dir"]}/')
+    # Print status and summary after all items have been processed
     print()
     print()
-    print("****************************")
+    print()
+    print("********************************************************")
     print()
 
     if len(tried_l) == len(batch_l):
@@ -589,6 +596,16 @@ def main():
         print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {len(tried_l)} attempted items.")
 
     runlog_sum.print_simple_summary(tried_l)
+    print()
+    print()
+
+    tn = datetime.datetime.now()
+    days = (tn-t0).days
+    seconds = (tn-t0).seconds
+    print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
+    print("Total elapsed time:", days, "days,", seconds, "seconds")
+    print(f'Results logged in {cf["logs_dir"]}/')
+    print()
     print()
 
 
@@ -909,8 +926,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     coml += [ "-v", cf["shell_media_dir"] + '/:/data' ]
                 if cf["shell_cache_dir"]:
                     coml += [ "-v", cf["shell_cache_dir"] + '/:/cache' ]
-                if clams["run_cli_gpu"]:
-                    coml += [ "--gpus", "all" ]
+                if "gpus" in clams["apps"][clamsi]:
+                    coml += [ "--gpus", clams["apps"][clamsi]["gpus"] ]
                 coml += [
                         image,
                         "python",
@@ -952,6 +969,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 if result.stderr:
                     print("Warning: CLI returned with error.  Contents of stderr:")
                     print(result.stderr)
+                    item["problems"] += [ "clams-" + str(clamsi) + ":stderr" ]
                 else:
                     print("CLAMS app finished without errors.")
 
