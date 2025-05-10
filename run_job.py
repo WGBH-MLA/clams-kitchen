@@ -435,7 +435,7 @@ def main():
         # allow defaulting to "all" GPUS for apps for which the "gpus" is not already specified.
         default_docker_gpus_all = False
         if "docker_gpus_all" in conffile:
-            if conffile["clams_run_cli_gpu"]:
+            if conffile["docker_gpus_all"]:
                 default_docker_gpus_all = True
         elif "clams_run_cli_gpu" in conffile:
             # deprecated conffile key
