@@ -58,32 +58,6 @@ def mmif_check ( mmif_path:str , complain:bool=False) -> List[str]:
     return statuses
 
 
-# deprecated
-def check_mmif ( mmif_path:str ) -> bool:
-    if not os.path.isfile(mmif_path): 
-        raise FileNotFoundError("MMIF file does not exist at " + mmif_path)
-        return False
-
-    with open(mmif_path, "r") as file:
-        mmif_str = file.read()
-    
-    #print( mmif_str[:89] )
-
-    try:
-        mmif_obj = Mmif(mmif_str)
-    except Exception as e:
-        raise e
-        return False
-
-    error_views = [ v for v in mmif_obj.views if "error" in v.metadata ]
-    if len(error_views) > 0:
-        raise ValueError("MMIF file has a view with an `error` key.")
-        return False
-
-    return True
-
-
-
 
 def make_blank_mmif (media_filename:str, mime:str) -> str:
     global template_json
