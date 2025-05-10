@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import json
+import datetime
 
 
 def print_simple_summary(tried_l):
@@ -11,6 +12,9 @@ def print_simple_summary(tried_l):
     errors = [item for item in tried_l if len(item["errors"]) > 0 ] 
     problems = [item for item in tried_l if len(item["problems"]) > 0 ] 
     infos = [item for item in tried_l if len(item["infos"]) > 0 ] 
+
+    print_timing(tried_l)
+    print()
 
     print(len(skips), "out of", len(tried_l), "items were skipped.")
     print(len(errors), "out of", len(tried_l), "items had errors.")
@@ -22,6 +26,9 @@ def print_summary(tried_l):
 
     print()
     print("Batch contained", len(tried_l), "items.")
+    print()
+
+    print_timing(tried_l)
     print()
 
     skips = [item for item in tried_l if item["skip_reason"] not in [""]]
@@ -63,6 +70,22 @@ def print_infos(tried_l):
         print("Items with info:")
         for item in infos:
             print(f" #{item['item_num']}:\t{item['asset_id']}\tInfo: {item['infos']}")
+
+
+def print_timing(tried_l):
+
+    if "time_began" not in tried_l[0]:
+        # no timing info in runlog
+        pass
+    else:
+        began = datetime.datetime.fromisoformat(tried_l[0]["time_began"])
+        ended = datetime.datetime.fromisoformat(tried_l[-1]["time_ended"])
+
+        days = (ended-began).days
+        seconds = (ended-began).seconds
+
+        print(f'First item began: {began.strftime("%Y-%m-%d %H:%M:%S")}')
+        print(f'Final item ended: {ended.strftime("%Y-%m-%d %H:%M:%S")}  ({days} days, {seconds} seconds later)')
 
 
 def main():

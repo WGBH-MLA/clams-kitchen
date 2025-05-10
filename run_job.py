@@ -23,6 +23,7 @@ with the corresponding configuration file key in brackets.
    - cleanup_media_per_item (bool)       [cleanup_media_per_item"]
    - cleanup_beyond_item (int)           ["cleanup_beyond_item"]
    - parallel (int)                      ["parallel"]
+   - stagger (int)                       ["stagger"]
    - artifacts_dir (str)
    - media_dir (str)
    - shell_media_dir (str)
@@ -69,6 +70,7 @@ import platform
 import csv
 import json
 import datetime
+import time
 import warnings
 import subprocess
 import argparse
@@ -326,10 +328,13 @@ def main():
             cf["just_get_media"] = False
 
         if "start_after_item" in conffile:
-            cf["start_after_item"] = conffile["start_after_item"]
+            if isinstance(conffile["start_after_item"], int) and conffile["start_after_item"] >  0:
+                cf["start_after_item"] = conffile["start_after_item"]
+            else:
+                cf["start_after_item"] = 0
         else:
             cf["start_after_item"] = 0
-
+           
         if "end_after_item" in conffile:
             if conffile["end_after_item"] == "":
                 cf["end_after_item"] = None
@@ -374,6 +379,11 @@ def main():
             cf["parallel"] = conffile["parallel"]
         else:
             cf["parallel"] = 0
+
+        if "stagger" in conffile:
+            cf["stagger"] = conffile["stagger"]
+        else:
+            cf["stagger"] = 15
 
 
         # CLAMS config
@@ -555,7 +565,9 @@ def main():
             run_item( batch_item, cf, clams, post_procs, tried_l, None) 
 
     else:
-        print(f'Will process {cf["parallel"]} items in parallel...')
+        print(f'Will process {cf["parallel"]} items in parallel.')
+        if cf["stagger"] > 0:
+            print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s...')
 
         with mp.Manager() as manager:
             # The `tried_l` variable will be an object shared by processes, so each process 
@@ -587,14 +599,15 @@ def main():
     print()
     print()
     print()
-    print("********************************************************")
+    print("***************************************************************************")
     print()
 
     if len(tried_l) == len(batch_l):
-        print(f"Processed {len(tried_l)} items.")
+        print(f"Done with {len(tried_l)} items.")
     else:
         print(f"Warning: Aimed to process {len(batch_l)} total items, but logged {len(tried_l)} attempted items.")
 
+    print()
     runlog_sum.print_simple_summary(tried_l)
     print()
     print()
@@ -615,13 +628,12 @@ def main():
 def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     """Run a single item"""
 
-    # record item start time
-    ti = datetime.datetime.now()
-    tis = ti.strftime("%Y-%m-%d %H:%M:%S")
-
-
+    # Define item-level helper function 
     def update_tried( item, cf, tried_l, l_lock):
         """Helper function to reduce code repetition"""
+
+        item["time_ended"] = datetime.datetime.now().isoformat()
+
         if l_lock is not None:
             with l_lock: 
                 tried_l.append(item)
@@ -629,9 +641,18 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         else:
             tried_l.append(item)
             write_tried_log(cf, tried_l)
-        
 
-    # don't change or add to the item passed in.  
+
+    # stagger start for the initial tranche of parallel items
+    if (batch_item["item_num"] - cf["start_after_item"]) <= cf["parallel"]:
+        stagger = cf["stagger"] * ((batch_item["item_num"] - cf["start_after_item"]) - 1)
+        time.sleep(stagger)
+
+    # record item start time
+    ti = datetime.datetime.now()
+    tis = ti.strftime("%Y-%m-%d %H:%M:%S")
+
+    # create new object so we don't change or add to the item passed in.  
     item = batch_item.copy()
 
     # initialize new dictionary elements for this item
@@ -643,6 +664,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     item["media_path"] = ""
     item["mmif_files"] = []
     item["mmif_paths"] = []
+    item["time_began"] = ti.isoformat()
+    item["time_ended"] = ""
     item["elapsed_seconds"] = None
 
     # set default value for `media_type` if this is not supplied
@@ -653,11 +676,11 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # set the index of the MMIF files so far for this item
     mmifi = -1
 
-    print()
-    print()
-    print("  *  ")
-    print(f'* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}')
-    print("  *  ")
+    item_header =  f'\n\n'
+    item_header += f'  *  \n'
+    item_header += f'* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}\n'
+    item_header += f'  *  '
+    print(item_header)
 
     ########################################################
     # Add media to the availability place, if it is not already there,
