@@ -94,6 +94,21 @@ logging.basicConfig(
 # Define helper functions
 ############################################################################
 
+def update_tried( item, cf, tried_l, l_lock):
+    """Helper function to reduce code repetition.
+    Handles locking, but only if a lock has been defined."""
+
+    item["time_ended"] = datetime.datetime.now().isoformat()
+
+    if l_lock is not None:
+        with l_lock: 
+            tried_l.append(item)
+            write_tried_log(cf, tried_l)
+    else:
+        tried_l.append(item)
+        write_tried_log(cf, tried_l)
+
+
 def write_tried_log(cf, tried_l):
     """Write a "runlog" of tried items.
     Write out both CSV and JSON versions."""
@@ -383,7 +398,7 @@ def main():
         if "stagger" in conffile:
             cf["stagger"] = conffile["stagger"]
         else:
-            cf["stagger"] = 15
+            cf["stagger"] = 20
 
 
         # CLAMS config
@@ -628,25 +643,10 @@ def main():
 def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     """Run a single item"""
 
-    # Define item-level helper function 
-    def update_tried( item, cf, tried_l, l_lock):
-        """Helper function to reduce code repetition"""
-
-        item["time_ended"] = datetime.datetime.now().isoformat()
-
-        if l_lock is not None:
-            with l_lock: 
-                tried_l.append(item)
-                write_tried_log(cf, tried_l)
-        else:
-            tried_l.append(item)
-            write_tried_log(cf, tried_l)
-
-
     # stagger start for the initial tranche of parallel items
     if (batch_item["item_num"] - cf["start_after_item"]) <= cf["parallel"]:
-        stagger = cf["stagger"] * ((batch_item["item_num"] - cf["start_after_item"]) - 1)
-        time.sleep(stagger)
+        delay = cf["stagger"] * ((batch_item["item_num"] - cf["start_after_item"]) - 1)
+        time.sleep(delay)
 
     # record item start time
     ti = datetime.datetime.now()
