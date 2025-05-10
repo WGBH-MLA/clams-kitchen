@@ -86,7 +86,7 @@ from drawer.mmif_adjunct import make_blank_mmif, mmif_check
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(message)s"
 )
 
@@ -138,18 +138,21 @@ def cleanup_media(cf, item):
     (Do the cleanup only if it is permitted by the configuration settings!)
     """
     
-    print()
-    print(f'# CLEANING UP MEDIA [#{item["item_num"]}]')
+    # shorthand item number string for screen output
+    ins = f'[#{item["item_num"]}] '
+
+    print(ins)
+    print(ins + '# CLEANING UP MEDIA')
 
     if not cf["media_required"]:
-        print("Job declared media was not required.  Will not attempt to clean up.")
+        print(ins + "Job declared media was not required.  Will not attempt to clean up.")
     elif cf["cleanup_media_per_item"] and item["item_num"] > cf["cleanup_beyond_item"]:
-        print("Attempting to remove media at", item["media_path"])
+        print(ins + "Attempting to remove media at", item["media_path"])
         removed = remove_media(item["media_path"])
         if removed:
-            print("Media removed.")
+            print(ins + "Media removed.")
     else:
-        print("Leaving media for this item.")
+        print(ins + "Leaving media for this item.")
 
 
 ############################################################################
@@ -575,6 +578,7 @@ def main():
 
     if cf["parallel"] == 0:
         print(f'Will process items serially...')
+        print()
         tried_l = []
         for batch_item in batch_l:
             run_item( batch_item, cf, clams, post_procs, tried_l, None) 
@@ -583,6 +587,7 @@ def main():
         print(f'Will process {cf["parallel"]} items in parallel.')
         if cf["stagger"] > 0:
             print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s...')
+        print()
 
         with mp.Manager() as manager:
             # The `tried_l` variable will be an object shared by processes, so each process 
@@ -611,7 +616,6 @@ def main():
 
     ############################################################################
     # Print status and summary after all items have been processed
-    print()
     print()
     print()
     print("***************************************************************************")
@@ -655,6 +659,15 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # create new object so we don't change or add to the item passed in.  
     item = batch_item.copy()
 
+    # shorthand item number string for screen output
+    ins = f'[#{item["item_num"]}] '
+
+    item_header =  f'{ins}\n'
+    item_header += f'{ins}  *  \n'
+    item_header += f'{ins}* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}\n'
+    item_header += f'{ins}  *  '
+    print(item_header)
+
     # initialize new dictionary elements for this item
     item["skip_reason"] = ""
     item["errors"] = []
@@ -671,42 +684,36 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # set default value for `media_type` if this is not supplied
     if "media_type" not in item:
         item["media_type"] = "Moving Image"
-        print("Warning:  Media type not specified. Assuming it is 'Moving Image'.")
+        print(ins + "Warning:  Media type not specified. Assuming it is 'Moving Image'.")
 
     # set the index of the MMIF files so far for this item
     mmifi = -1
-
-    item_header =  f'\n\n'
-    item_header += f'  *  \n'
-    item_header += f'* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}\n'
-    item_header += f'  *  '
-    print(item_header)
 
     ########################################################
     # Add media to the availability place, if it is not already there,
     # and update the dictionary
 
-    print()
-    print(f'# MEDIA AVAILABILITY [#{item["item_num"]}]')
+    print(ins)
+    print(ins + '# MEDIA AVAILABILITY')
 
     if not cf["media_required"]:
-        print("Media declared not required.")
-        print("Will continue.") 
+        print(ins + "Media declared not required.")
+        print(ins + "Will continue.") 
     else:
         media_path = ""
-        media_filename = check_avail(item["asset_id"], cf["media_dir"])
+        media_filename = check_avail(item["asset_id"], cf["media_dir"], ins)
 
         if media_filename is not None:
             media_path = cf["media_dir"] + "/" + media_filename
-            print("Media already available:  ", media_path) 
+            print(ins + "Media already available:  ", media_path) 
         else:
-            print("Media not yet available; will try to make available.") 
+            print(ins + "Media not yet available; will try to make available.") 
             if item["sonyci_id"] :
-                media_filename = make_avail(item["asset_id"], item["sonyci_id"], cf["media_dir"])
+                media_filename = make_avail(item["asset_id"], item["sonyci_id"], cf["media_dir"], ins)
                 if media_filename is not None:
                     media_path = cf["media_dir"] + "/" + media_filename
             else:
-                print("No Ci ID for " + item["asset_id"])
+                print(ins + "No Ci ID for " + item["asset_id"])
 
         if media_filename is not None and os.path.isfile(media_path):
             item["media_filename"] = media_filename
@@ -714,16 +721,15 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         else:
             # step failed
             # print error messages, updated results, continue to next loop iteration
-            print("Media file for " + item["asset_id"] + " could not be made available.")
-            print("SKIPPING", item["asset_id"])
+            print(ins + "Media file for " + item["asset_id"] + " could not be made available.")
+            print(ins + "SKIPPING", item["asset_id"])
             item["skip_reason"] = "media"
             update_tried( item, cf, tried_l, l_lock)
             return item
 
         if cf["just_get_media"]:
             # just update log and continue to next iteration without additional steps
-            print()
-            print("Media acquisition successful.")
+            print(ins + "Media acquisition successful.")
             # Update results (so we have a record of any failures)
             update_tried( item, cf, tried_l, l_lock)
             return item
@@ -733,13 +739,13 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # Create blank MMIF file, if it's not already there
     # (create MMIF 0)
 
-    print()
-    print(f'# MAKING BLANK MMIF [#{item["item_num"]}]')
+    print(ins)
+    print(ins + '# MAKING BLANK MMIF')
     mmifi += 1
 
     if not cf["media_required"]:
-        print("Media declared not required, implying that blank MMIF is not required.") 
-        print("Will continue.")
+        print(ins + "Media declared not required, implying that blank MMIF is not required.") 
+        print(ins + "Will continue.")
 
         # add empty strings for filename and path to this MMIF file
         item["mmif_files"].append("")
@@ -752,30 +758,30 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
         # Check to see if it exists; if not create it
         if ( os.path.isfile(mmif_path) and not cf["overwrite_mmif"]):
-            print("Will use existing MMIF:    " + mmif_path)
+            print(ins + "Will use existing MMIF:    " + mmif_path)
         else:
-            print("Will create MMIF file:     " + mmif_path)
+            print(ins + "Will create MMIF file:     " + mmif_path)
 
             # Check for prereqs
             if cf["media_required"] and item["media_filename"] == "":
                 # prereqs not satisfied
                 # print error messages, update results, continue to next loop iteration
-                print("Prerequisite failed:  Media required and no media filename recorded.")
-                print("SKIPPING", item["asset_id"])
+                print(ins + "Prerequisite failed:  Media required and no media filename recorded.")
+                print(ins + "SKIPPING", item["asset_id"])
                 item["skip_reason"] = f"mmif-{mmifi}-prereq"
                 update_tried( item, cf, tried_l, l_lock)
                 return item
             else:
-                print("Prerequisites passed.")
+                print(ins + "Prerequisites passed.")
 
             if item["media_type"] == "Moving Image":
                 mime = "video"
             elif item["media_type"] == "Sound":
                 mime = "audio"
             else:
-                print( "Warning: media type of " + item["asset_id"] + 
+                print(ins + "Warning: media type of " + item["asset_id"] + 
                     " is `" + item["media_type"] + "`." )
-                print( "Using 'video' as the MIME type." )
+                print(ins + "Using 'video' as the MIME type." )
                 mime = "video"
             mmif_str = make_blank_mmif(item["media_filename"], mime)
 
@@ -786,14 +792,14 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         
         mmif_status = mmif_check(mmif_path)
         if 'blank' in mmif_status:
-            print("Blank MMIF file successfully created.")
+            print(ins + "Blank MMIF file successfully created.")
             item["mmif_files"].append(mmif_filename)
             item["mmif_paths"].append(mmif_path)
         else:
             # step failed
             # print error messages, update results, continue to next loop iteration
             mmif_check(mmif_path, complain=True)
-            print("SKIPPING", item["asset_id"])
+            print(ins + "SKIPPING", item["asset_id"])
             item["skip_reason"] = f"mmif-{mmifi}"
             cleanup_media(cf, item)
             update_tried( item, cf, tried_l, l_lock)
@@ -804,10 +810,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # Construct CLAMS calls and call CLAMS apps, save output MMIF
     # (create MMIF 1 thru n)
 
-    print()
-    print(f'# CREATING ANNOTATION-LADEN MMIF WITH CLAMS [#{item["item_num"]}]')
+    print(ins)
+    print(ins + '# CREATING ANNOTATION-LADEN MMIF WITH CLAMS')
 
-    print("Will run", clams["num_stages"], "round(s) of CLAMS processing.")
+    print(ins + "Will run", clams["num_stages"], "round(s) of CLAMS processing.")
     clams_failed = False
 
     for i in range(clams["num_stages"]):
@@ -820,8 +826,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
         mmifi += 1
         clamsi = mmifi - 1
-        print()
-        print(f'## Making MMIF _{mmifi} [#{item["item_num"]}]')
+        print(ins)
+        print(ins + f'## Making MMIF _{mmifi}')
 
         # Define MMIF for this step of the job
         mmif_filename = item["asset_id"] + "_" + cf["job_id"] + "_" + str(mmifi) + ".mmif"
@@ -835,33 +841,33 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             if ( os.path.getsize(mmif_path) > 100 ):
                 # check to make sure MMIF file is valid
                 if 'valid' in mmif_check(mmif_path):
-                    print("Will use existing MMIF:    " + mmif_path)
+                    print(ins + "Will use existing MMIF:    " + mmif_path)
                     make_new_mmif = False
                 else:
-                    print("Existing MMIF file is not valid.  Will overwrite.")
+                    print(ins + "Existing MMIF file is not valid.  Will overwrite.")
             else:
-                print("Existing MMIF file is only", 
+                print(ins + "Existing MMIF file is only", 
                     os.path.getsize(mmif_path), 
                     "bytes.  Will overwrite.")
         
         if make_new_mmif:
             # Need to make new MMIF file.  Going to run a CLAMS app
-            print("Will try making MMIF file: " + mmif_path)
+            print(ins + "Will try making MMIF file: " + mmif_path)
 
             # Check for prereqs
             mmif_status = mmif_check(item["mmif_paths"][mmifi-1])
             if 'valid' not in mmif_status:
                 # prereqs not satisfied
                 mmif_check(mmif_path, complain=True)
-                print("Prerequisite failed:  Input MMIF is not valid.")
-                print("SKIPPING", item["asset_id"])
+                print(ins + "Prerequisite failed:  Input MMIF is not valid.")
+                print(ins + "SKIPPING", item["asset_id"])
                 item["skip_reason"] = f"mmif-{mmifi}-prereq"
                 clams_failed = True
                 # Go to next step of clams stages loop
                 # (does not break out of the item)
                 continue
             else:
-                print("Prerequisites passed.")
+                print(ins + "Prerequisites passed.")
 
             # Check to see how we're running the CLAMS app and proceed accordingly
             if "endpoint" in clams["apps"][clamsi]:
@@ -869,7 +875,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 # Run CLAMS app, assuming the app is already running as a local web service
                 endpoint = clams["apps"][clamsi]["endpoint"]
 
-                print("Sending request to a CLAMS web service at " + endpoint)
+                print(ins + "Sending request to a CLAMS web service at " + endpoint)
 
                 if len(clams["param_sets"][clamsi]) > 0:
                     # build querystring with parameters in job configuration
@@ -894,12 +900,12 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     # send request to the the CLAMS endpoint
                     response = requests.post(uri, headers=headers, data=mmif_str)
                 except Exception as e:
-                    print("Encountered exception:", e)
-                    print("Failed to get a response from the CLAMS web service.")
-                    print("Check CLAMS web service and resume before batch item:", item["item_num"])
+                    print(ins + "Encountered exception:", e)
+                    print(ins + "Failed to get a response from the CLAMS web service.")
+                    print(ins + "Check CLAMS web service and resume before batch item:", item["item_num"])
                     raise SystemExit("Exiting script.") from e
 
-                print("CLAMS app web serivce response code:", response.status_code)
+                print(ins + "CLAMS app web serivce response code:", response.status_code)
                 
                 # use the HTTP response as appropriate
                 if response.status_code :
@@ -913,14 +919,14 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         num_chars = file.write(mmif_str)
                     if num_chars < len(mmif_str):
                         raise Exception("Tried to write MMIF, but failed.")
-                    print("MMIF file created.")
+                    print(ins + "MMIF file created.")
 
             elif "image" in clams["apps"][clamsi]:
                 ################################################################
                 # Run CLAMS app by running the Docker image
                 image = clams["apps"][clamsi]["image"]
 
-                print("Attempting to run a CLAMS Docker image: " + image)
+                print(ins + "Attempting to run a CLAMS Docker image: " + image)
 
                 input_mmif_filename = item["mmif_files"][mmifi-1]
                 output_mmif_filename = mmif_filename
@@ -990,11 +996,11 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 result = subprocess.run(coml, capture_output=True, text=True)
 
                 if result.stderr:
-                    print("Warning: CLI returned with error.  Contents of stderr:")
+                    print(ins + "Warning: CLI returned with error.  Contents of stderr:")
                     print(result.stderr)
                     item["problems"] += [ "clams-" + str(clamsi) + ":stderr" ]
                 else:
-                    print("CLAMS app finished without errors.")
+                    print(ins + "CLAMS app finished without errors.")
 
 
         # Validate CLAMS app run
@@ -1012,7 +1018,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     if clams_failed:
         # step failed
         # print error messages, update results, continue to next loop iteration
-        print("SKIPPING", item["asset_id"])
+        print(ins + "SKIPPING", item["asset_id"])
         item["skip_reason"] = f"mmif-{mmifi}"
         cleanup_media(cf, item)
         update_tried( item, cf, tried_l, l_lock)
@@ -1023,11 +1029,11 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     # Process MMIF and get useful output
     # 
     
-    print()
-    print(f'# POSTPROCESSING ANNOTATION-LADEN MMIF [#{item["item_num"]}]')
+    print(ins)
+    print(ins + '# POSTPROCESSING ANNOTATION-LADEN MMIF')
 
     if len(post_procs) == 0:
-        print("No postprocessing procedures requested.  Will not postprocess.")
+        print(ins + "No postprocessing procedures requested.  Will not postprocess.")
 
     else:
         # Check for prereqs
@@ -1036,21 +1042,21 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             # prereqs not satisfied
             # print error messages, update results, continue to next loop iteration
             mmif_check(item["mmif_paths"][mmifi], complain=True)
-            print("Step prerequisite failed: MMIF contains error views or lacks annotations.")
-            print("SKIPPING", item["asset_id"])
+            print(ins + "Step prerequisite failed: MMIF contains error views or lacks annotations.")
+            print(ins + "SKIPPING", item["asset_id"])
             item["skip_reason"] = "usemmif-prereq"
             update_tried( item, cf, tried_l, l_lock)
             return item
         else:
-            print("Step prerequisites passed.")
+            print(ins + "Step prerequisites passed.")
 
         # Loop throug and run each post processing procedure that has been listed.
         for post_proc in post_procs:
         
             if "name" not in post_proc:
-                print("Postprocessing procedure not named.  Will not attempt.")
+                print(ins + "Postprocessing procedure not named.  Will not attempt.")
             else:
-                print("Will attempt to run postprocessing procedure:", post_proc["name"])
+                print(ins + "Will attempt to run postprocessing procedure:", post_proc["name"])
 
                 # Call separate procedure for appropraite post-processing
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
@@ -1061,20 +1067,20 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         params=post_proc )
 
                     if pp_errors not in [ None, [] ]:
-                        print("Warning:", post_proc["name"], "returned errors:", pp_errors)
+                        print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
                         item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
-                        print("PROCEEDING.")
+                        print(ins + "PROCEEDING.")
 
                     if pp_problems not in [ None, [] ]:
-                        print("Warning:", post_proc["name"], "encountered problems:", pp_problems)
+                        print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
                         item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
-                        print("PROCEEDING.")
+                        print(ins + "PROCEEDING.")
 
                     if pp_infos not in [ None, [] ]:
                         item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
 
                 else:
-                    print("Invalid postprocessing procedure:", post_proc)
+                    print(ins + "Invalid postprocessing procedure:", post_proc)
 
 
     ########################################################
@@ -1092,7 +1098,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     update_tried( item, cf, tried_l, l_lock)
 
     # print summary item info
-    print(f'Elapsed time for item # {item["item_num"]}:  {item["elapsed_seconds"]}s')
+    print(ins + f'Elapsed time for item #{item["item_num"]}:  {item["elapsed_seconds"]}s')
 
 
 # end of function for running items
