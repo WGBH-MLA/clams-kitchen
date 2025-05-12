@@ -78,7 +78,10 @@ def print_timing(tried_l):
         # no timing info in runlog
         pass
     else:
-        began = datetime.datetime.fromisoformat(tried_l[0]["time_began"])
+        # First item begun is the item with the lowest item number, 
+        # not necessarily the first item in the list.
+        began = datetime.datetime.fromisoformat(sorted(tried_l, key=lambda x: x["item_num"])[0]["time_began"])
+        # Last item finished is last item in list.
         ended = datetime.datetime.fromisoformat(tried_l[-1]["time_ended"])
 
         days = (ended-began).days
