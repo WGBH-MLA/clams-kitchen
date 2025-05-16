@@ -25,7 +25,7 @@ def print_simple_summary(tried_l):
 def print_summary(tried_l):
 
     print()
-    print("Batch contained", len(tried_l), "items.")
+    print("Logged attempts for", len(tried_l), "items.")
     print()
 
     print_timing(tried_l)
