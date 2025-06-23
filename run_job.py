@@ -63,8 +63,7 @@ in `batch_l` and adds the following keys, which are set when each item is ru:
    - elapsed_seconds (int)
 """
 
-# Import modules
-
+# Import standard modules
 import os
 import platform
 import csv
@@ -74,21 +73,37 @@ import time
 import warnings
 import subprocess
 import argparse
-import logging
 import multiprocessing as mp
-
-import requests
-
-import runlog_sum
-import visaid_builder.post_proc_item
-from drawer.media_availability import check_avail, make_avail, remove_media
-from drawer.mmif_adjunct import make_blank_mmif, mmif_check
-
+import logging
 
 logging.basicConfig(
     level=logging.WARNING,
     format="%(message)s"
 )
+
+# Import installed modules
+import requests
+
+# Import local modules
+import runlog_sum
+from drawer.media_availability import check_avail, make_avail, remove_media
+from drawer.mmif_adjunct import make_blank_mmif, mmif_check
+
+# Import post-processing modules, if available
+try:
+    import visaid_builder.post_proc_item
+except ImportError as e:
+    print("Import error:", e)
+    print("Warning: `visaid_builder` module not found.  Will not use.")
+
+try:
+    import transcript_converter.post_proc_item
+except ImportError as e:
+    print("Import error:", e)
+    print("Warning: `transcript_converter` module not found.  Will not use.")
+   
+
+
 
 ############################################################################
 # Define helper functions
@@ -1062,6 +1077,26 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
                     pp_errors, pp_problems, pp_infos = visaid_builder.post_proc_item.run_post(
+                        item=item, 
+                        cf=cf,
+                        params=post_proc )
+
+                    if pp_errors not in [ None, [] ]:
+                        print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
+                        item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
+                        print(ins + "PROCEEDING.")
+
+                    if pp_problems not in [ None, [] ]:
+                        print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
+                        item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
+                        print(ins + "PROCEEDING.")
+
+                    if pp_infos not in [ None, [] ]:
+                        item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
+
+                elif post_proc["name"].lower() in ["transcript_converter"] :
+
+                    pp_errors, pp_problems, pp_infos = transcript_converter.post_proc_item.run_post(
                         item=item, 
                         cf=cf,
                         params=post_proc )
