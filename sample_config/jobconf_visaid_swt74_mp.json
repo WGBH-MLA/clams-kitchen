@@ -1,0 +1,81 @@
+{
+  "id": "TEST",
+  "local_base": "/home/USERNAME/",
+  "results_dir": "stovetop/TEST",
+  "def_path": "stovetop/TEST/batch.csv",
+  "media_dir": "batchmedia",
+  "start_after_item": 0,
+  "end_after_item": null,
+  "overwrite_mmif": false,
+  "cleanup_media_per_item": true,
+  "cleanup_beyond_item": 4,
+  "filter_warnings": "ignore",
+  "parallel": 3,
+  "stagger": 30,
+  "docker_gpus_all": true,
+  "clams_apps": [
+    { "image": "ghcr.io/clamsproject/app-swt-detection:v7.4" }
+  ],
+  "clams_params": [
+    {
+      "pretty": "true",
+      "useClassifier": "true",
+      "useStitcher": "true",
+      "tpModelName": "convnext_small",
+      "tpUsePosModel": "true",      
+      "tpStartAt": 0,
+      "tpStopAt": 9000000,
+      "tpSampleRate": 250,
+      "tfMinTPScore": 0.05,
+      "tfMinTFScore": 0.25,
+      "tfMinTFDuration": 1900,
+      "tfAllowOverlap": "false",
+      "tfLabelMapPreset": "nopreset",
+      "tfLabelMap": {
+        "B":"bars",
+        "S":"slate",
+        "I":"chyron",
+        "Y":"chyron",
+        "N":"chyron",
+        "M":"main title",            
+        "F":"filmed text",
+        "C":"credits",
+        "R":"credits",
+        "O":"other text",
+        "L":"other text",
+        "E":"other text",
+        "U":"other text",            
+        "K":"other text",
+        "G":"other text",
+        "T":"other text"
+        }
+    }
+  ],
+  "post_procs": [
+    {
+      "name": "visaid_builder",
+      "artifacts": ["data", "slates", "visaids"],
+      "prog_start_min": 3000,
+      "prog_start_max": 150000,
+      "include_only": null,
+      "exclude": [],
+      "max_unsampled_gap": 60000,      
+      "subsampling": {
+        "bars": 120100,
+        "slate": 9900,
+        "chyron": 15100,
+        "main title": 15100,
+        "other text": 15100,
+        "filmed text": 30100,
+        "credits": 1900 },
+      "default_subsampling": 60100,
+      "include_first_time": false,
+      "include_final_time": false,
+      "job_id_in_visaid_filename": false,
+      "display_video_duration": true,
+      "display_job_info": true,
+      "display_image_ms": true,
+      "aapb_timecode_link": true
+    }
+  ]
+}
