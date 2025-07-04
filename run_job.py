@@ -113,39 +113,68 @@ def update_tried( item, cf, tried_l, l_lock):
     """Helper function to reduce code repetition.
     Handles locking, but only if a lock has been defined."""
 
+    # shorthand item number string for screen output
+    ins = f'[#{item["item_num"]}] '
+
+    # record time that item finished
     item["time_ended"] = datetime.datetime.now().isoformat()
 
+    print(ins+"Recording this item in the list of tried items.")
+
     if l_lock is not None:
+        print(ins+f"Worker {os.getpid()}: Received l_lock: {l_lock}") # DIAG
         with l_lock: 
+            print(ins+f"Worker {os.getpid()}: Acquired l_lock: {l_lock}") # DIAG
             tried_l.append(item)
-            write_tried_log(cf, tried_l)
+            print(ins+"Item recorded.")
+            write_tried_log(item, cf, tried_l)
+        print(ins+f"Worker {os.getpid()}: Released l_lock: {l_lock}") # DIAG
     else:
         tried_l.append(item)
-        write_tried_log(cf, tried_l)
+        write_tried_log(item, cf, tried_l)
 
 
-def write_tried_log(cf, tried_l):
-    """Write a "runlog" of tried items.
-    Write out both CSV and JSON versions."""
+def write_tried_log(item, cf, tried_l):
+    """
+    Write a "runlog" of tried items.
+    Write out both CSV and JSON versions.
+    Note: `item` is used only for exception messages; it can be `None`.  
+    """
+
+    # shorthand item number string for screen output
+    if item is not None:
+        ins = f'[#{item["item_num"]}] '
+    else:
+        ins = "[NO CURRENT ITEM]"
 
     # Conversion may be necessary if object passed in was a ListProxy instead of
-    # plain list
-    log_l = list(tried_l)
+    # plain list.
+    # This step has been known to cause problems with multiprocessing, especially
+    # with items rapidly or many items being updated concurrently.  If we can't 
+    # convert to a list, no problem.  
+    log_l = None
+    try:
+        log_l = list(tried_l)
+    except Exception as e:
+        print(ins + "High volume IPC prevented immediate logging of this item.")
+        print(ins + "(This item will still be included in log eventually.)")
 
-    # Results files get a new name every time this script is run
-    job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
-                                    "_" + cf["start_timestamp"] + "_runlog" )
-    job_results_log_csv_path  = job_results_log_file_base + ".csv"
-    job_results_log_json_path  = job_results_log_file_base + ".json"
+    # If we got a log list, write it out
+    if log_l is not None:
+        # Results files get a new name every time this script is run
+        job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
+                                        "_" + cf["start_timestamp"] + "_runlog" )
+        job_results_log_csv_path  = job_results_log_file_base + ".csv"
+        job_results_log_json_path  = job_results_log_file_base + ".json"
 
-    with open(job_results_log_csv_path, 'w', newline='') as file:
-        fieldnames = log_l[0].keys()
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(log_l)
-    
-    with open(job_results_log_json_path, 'w') as file:
-        json.dump(log_l, file, indent=2)
+        with open(job_results_log_csv_path, 'w', newline='') as file:
+            fieldnames = log_l[0].keys()
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(log_l)
+        
+        with open(job_results_log_json_path, 'w') as file:
+            json.dump(log_l, file, indent=2)
 
 
 def cleanup_media(cf, item):
@@ -591,10 +620,14 @@ def main():
     print("Will start processing.")
     print()
 
+    # The `tried_l` variable is the main data structure for recording results of the run.  
+    # It is a list of dicts.
+    # In MP mode, it is a `Manager.list`.  In serial mode, it is a plain list.
+    tried_l = []
+
     if cf["parallel"] == 0:
         print(f'Will process items serially...')
         print()
-        tried_l = []
         for batch_item in batch_l:
             run_item( batch_item, cf, clams, post_procs, tried_l, None) 
 
@@ -624,6 +657,9 @@ def main():
                                       chunksize=1 )
             # convert `tried_l` to a normal list
             tried_l = list(tried_l)
+
+        # Make sure all items got logged 
+        write_tried_log(None, cf, tried_l)
 
     # End of main loop or processing pool
     ############################################################################
