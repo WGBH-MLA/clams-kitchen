@@ -122,15 +122,16 @@ def update_tried( item, cf, tried_l, l_lock):
     print(ins+"Recording this item in the list of tried items.")
 
     if l_lock is not None:
-        print(ins+f"Worker {os.getpid()}: Received l_lock: {l_lock}") # DIAG
+        print(ins+f"Worker {os.getpid()} received lock: {l_lock}") # DIAG
         with l_lock: 
-            print(ins+f"Worker {os.getpid()}: Acquired l_lock: {l_lock}") # DIAG
+            print(ins+f"Worker {os.getpid()} acquired lock: {l_lock}") # DIAG
             tried_l.append(item)
-            print(ins+"Item recorded.")
+            print(ins+"Item recorded in processing list.")
             write_tried_log(item, cf, tried_l)
-        print(ins+f"Worker {os.getpid()}: Released l_lock: {l_lock}") # DIAG
+        print(ins+f"Worker {os.getpid()} released lock: {l_lock}") # DIAG
     else:
         tried_l.append(item)
+        print(ins+"Item recorded in processing list.")
         write_tried_log(item, cf, tried_l)
 
 
@@ -145,7 +146,7 @@ def write_tried_log(item, cf, tried_l):
     if item is not None:
         ins = f'[#{item["item_num"]}] '
     else:
-        ins = "[NO CURRENT ITEM]"
+        ins = ""
 
     # Conversion may be necessary if object passed in was a ListProxy instead of
     # plain list.
@@ -175,6 +176,8 @@ def write_tried_log(item, cf, tried_l):
         
         with open(job_results_log_json_path, 'w') as file:
             json.dump(log_l, file, indent=2)
+
+        print(ins+"Processing list written to log file.")
 
 
 def cleanup_media(cf, item):
@@ -659,6 +662,7 @@ def main():
             tried_l = list(tried_l)
 
         # Make sure all items got logged 
+        print()
         write_tried_log(None, cf, tried_l)
 
     # End of main loop or processing pool

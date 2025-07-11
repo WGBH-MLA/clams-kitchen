@@ -1,4 +1,10 @@
 
+"""
+runlog_sum.py
+
+Functions to creates a user-friendly summaries from clams-kitchen runlogs
+"""
+
 import argparse
 import os
 import sys
@@ -105,9 +111,6 @@ def main():
         help="Print infos about any items that have it.")
     parser.add_argument("logfile", metavar="LOG",
         help="Path to a single runlog (in JSON format)")
-
-    # parser.add_argument("-d", "--jobdir", metavar="DIR", nargs="?",
-    #     help="Path to directory containing runlogs")
 
     args = parser.parse_args()
 
