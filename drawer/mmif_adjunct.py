@@ -37,7 +37,9 @@ def mmif_check ( mmif_path:str , complain:bool=False) -> List[str]:
         except Exception as e:
             statuses.append('invalid')
             if complain:
-                print("MMIF content invalid at " + mmif_path)
+                print("Encountered exception:")
+                print(e)
+                print("MMIF check failed for " + mmif_path)
         else:
             statuses.append('valid')
 
