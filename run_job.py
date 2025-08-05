@@ -33,10 +33,13 @@ with the corresponding configuration file key in brackets.
 
 `clams` - CLAMS-specific configuration dictionary. The values are set by the 
 job configuration file.  It has the following keys:
-   - apps (list of dicts) each dict with a single key of "image" or "endpoint" 
-         and the relevant Docker image or web service endpoint as the value
+   - apps (list of dicts) each dict each with a key of "image" or "endpoint" 
+         and the relevant Docker image or web service endpoint as the value.
+         Each dict also has a key indicating whe the value of the "gpus" parameter
+         passed to Docker.  Usually, to use GPU, it is set to "all".
    - param_sets (list of dicts) each with parameters for a CLAMS app
-   - run_cli_gpu (bool) indicating whether to call Docker with GPU (cuda) enabled
+   - docker_gpus_all (bool) indicating whether to call Docker with GPU (cuda) enabled
+   - show_cli_stderr (bool) indicating whether to print stderr to screen
 
 `post_procs` - a list of dicts each with the parameters for a post-process
 
@@ -513,6 +516,13 @@ def main():
                 if "image" in app and "gpus" not in app:
                     app["gpus"] = "all"
 
+        if "clams_show_cli_stderr" in conffile:
+            if conffile["clams_show_cli_stderr"]:
+                clams["show_cli_stderr"] = True
+            else:
+                clams["show_cli_stderr"] = False
+        else:
+            clams["show_cli_stderr"] = False
 
         # Post-processing configuration options
 
@@ -1051,8 +1061,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 result = subprocess.run(coml, capture_output=True, text=True)
 
                 if result.stderr:
-                    print(ins + "Warning: CLI returned with error.  Contents of stderr:")
-                    print(result.stderr)
+                    print(ins + "Warning: CLI returned with content in stderr.")
+                    if clams["show_cli_stderr"]:
+                        print(ins + "Content of stderr:")
+                        print(result.stderr)
                     item["problems"] += [ "clams-" + str(clamsi) + ":stderr" ]
                 else:
                     print(ins + "CLAMS app finished without errors.")
