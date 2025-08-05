@@ -1,2 +1,2 @@
 requests>=2.31.0
-mmif-python>=1.0.14
+mmif-python>=1.1.2
