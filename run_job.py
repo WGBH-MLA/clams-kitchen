@@ -119,6 +119,9 @@ def update_tried( item, cf, tried_l, l_lock):
     # shorthand item number string for screen output
     ins = f'[#{item["item_num"]}] '
 
+    print(ins)
+    print(ins + '# UPDATING LOG')
+
     # record time that item finished
     item["time_ended"] = datetime.datetime.now().isoformat()
 
@@ -194,15 +197,18 @@ def cleanup_media(cf, item):
     print(ins)
     print(ins + '# CLEANING UP MEDIA')
 
+    # Decide whether to clean up, and output informative messages
     if not cf["media_required"]:
-        print(ins + "Job declared media was not required.  Will not attempt to clean up.")
-    elif cf["cleanup_media_per_item"] and item["item_num"] > cf["cleanup_beyond_item"]:
+        print(ins + "Job declared media was not required.  Will not attempt to clean up media.")
+    elif not cf["cleanup_media_per_item"]:
+        print(ins + "Cleanup not enabled.  Will not attempt to clean up media.")  
+    elif not item["cleanup_eligible"]:
+        print(ins + "Item not eligible for cleanup.  Leaving media for this item.")  
+    else:
         print(ins + "Attempting to remove media at", item["media_path"])
         removed = remove_media(item["media_path"])
         if removed:
             print(ins + "Media removed.")
-    else:
-        print(ins + "Leaving media for this item.")
 
 
 ############################################################################
@@ -733,23 +739,33 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     item_header += f'{ins}  *  '
     print(item_header)
 
+    # Set empty values for data elements not provided
+    if "sonyci_id" not in item:
+        item ["sonyci_id"] = ""
+    if "media_filename" not in item:
+        item["media_filename"] = ""
+
+    # This will be set later
+    item["media_path"] = ""
+
+    # By default, items are not eligible for media cleanup
+    item["cleanup_eligible"] = False
+
+    if "media_type" not in item:
+        item["media_type"] = ""
+        # In the future, maybe check media type for compatibility with type of processing
+        #print(ins + "Warning:  Media type not specified.")
+
     # initialize new dictionary elements for this item
     item["skip_reason"] = ""
     item["errors"] = []
     item["problems"] = []
     item["infos"] = []
-    item["media_filename"] = ""
-    item["media_path"] = ""
     item["mmif_files"] = []
     item["mmif_paths"] = []
     item["time_began"] = ti.isoformat()
     item["time_ended"] = ""
     item["elapsed_seconds"] = None
-
-    # set default value for `media_type` if this is not supplied
-    if "media_type" not in item:
-        item["media_type"] = "Moving Image"
-        print(ins + "Warning:  Media type not specified. Assuming it is 'Moving Image'.")
 
     # set the index of the MMIF files so far for this item
     mmifi = -1
@@ -761,29 +777,78 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     print(ins)
     print(ins + '# MEDIA AVAILABILITY')
 
+    media_success = False
+
     if not cf["media_required"]:
+        # Media not required
         print(ins + "Media declared not required.")
         print(ins + "Will continue.") 
+
+        media_success = True
+        item["cleanup_eligible"] = False
+    
     else:
-        media_path = ""
-        media_filename = check_avail(item["asset_id"], cf["media_dir"], ins)
-
-        if media_filename is not None:
-            media_path = cf["media_dir"] + "/" + media_filename
-            print(ins + "Media already available:  ", media_path) 
-        else:
-            print(ins + "Media not yet available; will try to make available.") 
-            if item["sonyci_id"] :
-                media_filename = make_avail(item["asset_id"], item["sonyci_id"], cf["media_dir"], ins)
-                if media_filename is not None:
-                    media_path = cf["media_dir"] + "/" + media_filename
+        if item["media_filename"]:
+            # Media file specified in batch list
+            media_path = cf["media_dir"] + "/" + item["media_filename"]
+            if os.path.isfile(media_path):
+                # Media found at path
+                item["media_path"] = media_path
+                print(ins + "Listed media file found: " + item["media_path"])
+                print(ins + "(Media specified in the batch list will NOT be eligible for cleanup.)") 
+                media_success = True
+                item["cleanup_eligible"] = False
             else:
-                print(ins + "No Ci ID for " + item["asset_id"])
-
-        if media_filename is not None and os.path.isfile(media_path):
-            item["media_filename"] = media_filename
-            item["media_path"] = media_path
+                print(ins + "Media filename in the batch list not found in batch media directory.") 
+                media_success = False
+                item["cleanup_eligible"] = False
+        
         else:
+            # Media file not specified in batch list.
+            # Will check availability and try to make available.
+
+            # Check for availability
+            media_filename = check_avail(item["asset_id"], cf["media_dir"], ins)
+
+            if media_filename is not None:
+                # Appropriate media file is already present
+                item["media_filename"] = media_filename
+                item["media_path"] = cf["media_dir"] + "/" + media_filename
+                print(ins + "Media already available: " + item["media_path"]) 
+                print(ins + "(Already present media will NOT be eligible for cleanup.)") 
+                media_success = True
+                item["cleanup_eligible"] = False
+
+            else:
+                # Attempt to get media file from Sony Ci
+                print(ins + "Media not yet available; will try to acquire from Sony Ci.") 
+                
+                if item["sonyci_id"]:
+                    media_filename = make_avail(item["asset_id"], item["sonyci_id"], cf["media_dir"], ins)
+                    if media_filename is not None:
+                        item["media_filename"] = media_filename
+                        item["media_path"] = cf["media_dir"] + "/" + media_filename
+                        print(ins + "Media downloaded: " + item["media_path"])
+                        media_success = True
+              
+                        if not cf["cleanup_media_per_item"]: 
+                            print(ins + "(Cleanup not enabled; item will NOT be eligible for cleanup.)" ) 
+                            item["cleanup_eligible"] = False
+                        else:
+                            if item["item_num"] <= cf["cleanup_beyond_item"]:
+                                print(ins + "(Item number is less than cleanup threshold; item will NOT be eligible for cleanup.)" ) 
+                                item["cleanup_eligible"] = False
+                            else:
+                                # The only case where cleanup is allowed
+                                print(ins + "(This downloaded media will be eligible for cleanup.)") 
+                                item["cleanup_eligible"] = True
+
+                else:
+                    print(ins + "No Ci ID for " + item["asset_id"])
+                    media_success = False
+                    item["cleanup_eligible"] = False
+
+        if not media_success:
             # step failed
             # print error messages, updated results, continue to next loop iteration
             print(ins + "Media file for " + item["asset_id"] + " could not be made available.")
@@ -1185,6 +1250,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     update_tried( item, cf, tried_l, l_lock)
 
     # print summary item info
+    print(ins)
     print(ins + f'Elapsed time for item #{item["item_num"]}:  {item["elapsed_seconds"]}s')
 
 
