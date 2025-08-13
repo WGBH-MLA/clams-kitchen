@@ -944,7 +944,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         else:
             # step failed
             # print error messages, update results, continue to next loop iteration
-            mmif_check(mmif_path, complain=True)
+            print(ins + "MMIF check failed; does not have 'blank' status.")
             print(ins + "SKIPPING", item["asset_id"])
             item["skip_reason"] = f"mmif-{mmifi}"
             cleanup_media(cf, item)
@@ -1004,7 +1004,6 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             mmif_status = mmif_check(item["mmif_paths"][mmifi-1])
             if 'valid' not in mmif_status:
                 # prereqs not satisfied
-                mmif_check(mmif_path, complain=True)
                 print(ins + "Prerequisite failed:  Input MMIF is not valid.")
                 print(ins + "SKIPPING", item["asset_id"])
                 item["skip_reason"] = f"mmif-{mmifi}-prereq"
@@ -1162,7 +1161,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         else:
             # step failed
             # print error messages, update results, mark the CLAMS processing has failed
-            mmif_check(mmif_path, complain=True)
+            print(ins + "MMIF check failed.")
+            print(ins + "Step prerequisite failed: MMIF contains error views or lacks annotations.")
             clams_failed = True
             
 
@@ -1192,7 +1192,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         if ('laden' not in mmif_status or 'error-views' in mmif_status):
             # prereqs not satisfied
             # print error messages, update results, continue to next loop iteration
-            mmif_check(item["mmif_paths"][mmifi], complain=True)
+            print(ins + "MMIF check failed.")
             print(ins + "Step prerequisite failed: MMIF contains error views or lacks annotations.")
             print(ins + "SKIPPING", item["asset_id"])
             item["skip_reason"] = "usemmif-prereq"
