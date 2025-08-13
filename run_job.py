@@ -9,7 +9,7 @@ It uses several data structures that are passed around this module.
 `cf` - the job configuration dictionary. Most of the values are set by the 
 job configuration file.  Some can be set from the command line.  Some
 are calculated at the beginning of the job.  The dictionary keys are as follows,
-with the corresponding configuration file key in brackets.
+with the corresponding jobconf file key in brackets.
    - start_timestamp (str)
    - job_id (str)                        ["id"]
    - job_name (str)                      ["name"]
@@ -37,9 +37,14 @@ job configuration file.  It has the following keys:
          and the relevant Docker image or web service endpoint as the value.
          Each dict also has a key indicating whe the value of the "gpus" parameter
          passed to Docker.  Usually, to use GPU, it is set to "all".
+         (jobconf key: "clams_apps")
    - param_sets (list of dicts) each with parameters for a CLAMS app
+         (jobconf key: "clams_params")
    - docker_gpus_all (bool) indicating whether to call Docker with GPU (cuda) enabled
-   - show_cli_stderr (bool) indicating whether to print stderr to screen
+         (jobconf key: "docker_gpus_all")
+   - save_cli_stderr (bool) indicating whether to save the content of stderr from
+         CLAMS app run 
+         (jobconf key: "clams_save_cli_stderr")
 
 `post_procs` - a list of dicts each with the parameters for a post-process
 
@@ -522,13 +527,21 @@ def main():
                 if "image" in app and "gpus" not in app:
                     app["gpus"] = "all"
 
-        if "clams_show_cli_stderr" in conffile:
-            if conffile["clams_show_cli_stderr"]:
-                clams["show_cli_stderr"] = True
+        # Set flag for whether to save content of stderr from CLAMS CLI
+        if "clams_save_cli_stderr" in conffile:
+            if conffile["clams_save_cli_stderr"]:
+                clams["save_cli_stderr"] = True
             else:
-                clams["show_cli_stderr"] = False
+                clams["save_cli_stderr"] = False
         else:
-            clams["show_cli_stderr"] = False
+            clams["save_cli_stderr"] = True
+
+        # If there is a condition requiring saving messages, define the directory
+        if clams["save_cli_stderr"]:
+            cf["messages_dir"] = results_dir + "/" + "messages"
+        else:
+            cf["messages_dir"] = None
+
 
         # Post-processing configuration options
 
@@ -577,6 +590,9 @@ def main():
 
     # Create list of dirs to create/validate
     dirs = [ cf["mmif_dir"] ]
+
+    if cf["messages_dir"]:
+        dirs.append(cf["messages_dir"]) 
 
     if cf["artifacts_dir"]:
         dirs.append(cf["artifacts_dir"])
@@ -1127,9 +1143,12 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
                 if result.stderr:
                     print(ins + "Warning: CLI returned with content in stderr.")
-                    if clams["show_cli_stderr"]:
-                        print(ins + "Content of stderr:")
-                        print(result.stderr)
+                    if clams["save_cli_stderr"]:
+                        error_filename = f'{item["asset_id"]}_CLAMS-{clamsi}_stderr.txt'
+                        error_filepath = cf["messages_dir"] + "/" + error_filename
+                        print(ins + "Will save stderr to " + error_filepath)
+                        with open( error_filepath, "w" ) as f:
+                            f.write(result.stderr)
                     item["problems"] += [ "clams-" + str(clamsi) + ":stderr" ]
                 else:
                     print(ins + "CLAMS app finished without errors.")
