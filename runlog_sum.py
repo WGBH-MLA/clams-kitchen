@@ -69,7 +69,6 @@ def print_summary(tried_l):
 def print_infos(tried_l):
 
     infos = [item for item in tried_l if len(item["infos"]) > 0 ] 
-    print(len(infos), "out of", len(tried_l), "items had info.")
 
     if len(infos) > 0:
         print()
