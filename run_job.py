@@ -189,6 +189,10 @@ def write_tried_log(item, cf, tried_l):
             json.dump(log_l, file, indent=2)
 
         print(ins+"Processing list written to log file.")
+    else:
+        job_results_log_json_path = None
+    
+    return job_results_log_json_path
 
 
 def cleanup_media(cf, item):
@@ -693,21 +697,25 @@ def main():
             # convert `tried_l` to a normal list
             tried_l = list(tried_l)
 
-        # Make sure all items got logged 
-        print()
-        write_tried_log(None, cf, tried_l)
-
     # End of main loop or processing pool
     ############################################################################
 
 
     ############################################################################
     # Print status and summary after all items have been processed
+
     print()
     print()
     print("***************************************************************************")
+
+    # Write the log file once more because
+    #   (1) want to make sure all items got logged
+    #   (2) need to get the path of the JSON log file
+    print()
+    job_results_log_json_path = write_tried_log(None, cf, tried_l)
     print()
 
+    # Print summary data 
     if len(tried_l) == len(batch_l):
         print(f"Done with {len(tried_l)} items.")
     else:
@@ -716,14 +724,13 @@ def main():
     print()
     runlog_sum.print_simple_summary(tried_l)
     print()
-    print()
 
     tn = datetime.datetime.now()
     days = (tn-t0).days
     seconds = (tn-t0).seconds
     print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
     print("Total elapsed time:", days, "days,", seconds, "seconds")
-    print(f'Results logged in {cf["logs_dir"]}/')
+    print(f'Results logged in {job_results_log_json_path}')
     print()
     print()
 
