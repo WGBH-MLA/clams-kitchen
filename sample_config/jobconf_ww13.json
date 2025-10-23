@@ -1,8 +1,8 @@
 {
-  "id": "TEST",
+  "id": "FILL",
   "local_base": "/home/USER/",
-  "results_dir": "stovetop/TEST",
-  "def_path": "stovetop/TEST/batch.csv",
+  "results_dir": "stovetop/FILL",
+  "def_path": "stovetop/FILL/batch.csv",
   "media_dir": "batchmedia",
   "cache_dir": ".cache",
   "start_after_item": 0,
@@ -30,8 +30,7 @@
   "post_procs": [
     {
       "name": "transcript_converter",
-      "artifacts": ["transcript_mmif", "tpme_mmif", "transcript_aajson", "tpme_aajson", "transcript_text", "tpme_text"],      
-      "max_segment_chars": 110
+      "artifacts": ["transcript_mmif", "tpme_mmif", "transcript_aajson", "tpme_aajson", "transcript_text", "tpme_text"]
     }
   ]
 }
