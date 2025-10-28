@@ -66,6 +66,12 @@ def print_summary(tried_l):
             print(f" #{item['item_num']}:\t{item['asset_id']}\tProblems: {item['problems']}")
 
 
+def print_skipped_list(tried_l):
+    skips = [item for item in tried_l if item["skip_reason"] not in [""]]
+
+    print( [item['item_num'] for item in skips] )
+
+
 def print_infos(tried_l):
 
     infos = [item for item in tried_l if len(item["infos"]) > 0 ] 
@@ -108,6 +114,8 @@ def main():
         help="Print just a simple summary, not the full summary")
     parser.add_argument("-i", "--infos", action="store_true",
         help="Print infos about any items that have it.")
+    parser.add_argument("--list-skipped", action="store_true",
+        help="Print a list of job item numbers for items skipped during the job.")
     parser.add_argument("logfile", metavar="LOG",
         help="Path to a single runlog (in JSON format)")
 
@@ -134,6 +142,11 @@ def main():
     
     if args.infos:
         print_infos(tried_l)
+
+    if args.list_skipped:
+        print()
+        print("Job item numbers of items skipped:")
+        print_skipped_list(tried_l)
 
 
 if __name__ == "__main__":
