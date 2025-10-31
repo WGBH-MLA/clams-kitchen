@@ -69,7 +69,28 @@ def print_summary(tried_l):
 def print_skipped_list(tried_l):
     skips = [item for item in tried_l if item["skip_reason"] not in [""]]
 
+    print()
+    print("Job item numbers of items skipped:")
     print( [item['item_num'] for item in skips] )
+
+
+def print_last_consec(tried_l):
+    items_done = [ item['item_num'] for item in tried_l ]
+    items_done.sort()
+
+    last_consec = 0
+    idx_check = 0
+
+    while idx_check < len(items_done):
+        if items_done[idx_check] == 1 + last_consec:
+            last_consec = items_done[idx_check]
+        else:
+            break
+        idx_check += 1
+
+    print()
+    print("Item number of last item in consecutive sequence:")
+    print(last_consec)
 
 
 def print_infos(tried_l):
@@ -116,6 +137,8 @@ def main():
         help="Print infos about any items that have it.")
     parser.add_argument("--list-skipped", action="store_true",
         help="Print a list of job item numbers for items skipped during the job.")
+    parser.add_argument("--last-consec", action="store_true",
+        help="Print the last of item numbers consecutively attempted (useful for restarting aborted jobs)")
     parser.add_argument("logfile", metavar="LOG",
         help="Path to a single runlog (in JSON format)")
 
@@ -144,10 +167,10 @@ def main():
         print_infos(tried_l)
 
     if args.list_skipped:
-        print()
-        print("Job item numbers of items skipped:")
         print_skipped_list(tried_l)
 
+    if args.last_consec:
+        print_last_consec(tried_l)
 
 if __name__ == "__main__":
     main()
