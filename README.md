@@ -33,7 +33,7 @@ The main script is `run_job.py`.  Run `python run_job.py -h` for help.
 
 You will need a configuration file, which is a JSON file.  See the "Configuration" section betlow for details.  Several example files are included in the `sample_config` directory.
 
-You will also need a batch definition file, which is a CSV file.  The first column must be `asset_id`.  In addition, at least one other column is required.  It must be either `media_filename` (for media that is already locally available in the media directory) or `sonyci_id` (for media that needs to be acquired from Sony Ci).
+You will also need a batch definition file, which is a CSV file.  The first column must be `asset_id`.  In addition, at least one other column is required.  It must be either `media_filename` (just the filename, not the full path, for media that is already locally available in the media directory) or `sonyci_id` (for media that needs to be acquired from Sony Ci).
 
 ## Configuration
 
@@ -45,7 +45,7 @@ These fields are required for execution of `run_job.py`.
 
 #### `id`
 
-This is an identifier for the batch.  It should have no spaces or other special characters that don't belong in a filename.
+This is an identifier for the batch.  It must be no more than 72 characters long, only alphanumeric along with `_`, `-`, and `+`.  (This ID is used, among other ways, to mark MMIF files and runlogs according to their originating job.  It may also appear in metadata about job artifacts.)
 
 #### `def_path` 
 
@@ -78,7 +78,15 @@ Determines whether CLAMS apps are to be run via Dockerized commandline apps or v
 
 #### `clams_images` or `clams_endpoints`
 
-A list of strings specifying either Docker images for CLAMS apps to be run or endpoints to be queried.
+A list of strings specifying either Docker images for CLAMS apps to be run or endpoints to be queried.  (Which one you should used depends on the value of `clams_run_cli`.)
+
+#### `docker_gpus_all`
+
+A boolean indicating whether to call Docker with GPU (CUDA) enabled.
+
+#### `clams_apps`
+
+As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create an associative array for a pipeline of CLAMS apps.  Each item must have a key named either "image" or "endpoint" and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `gpus` indicating whe the value of the "gpus" parameter passed to Docker (overiding any value set by `docker_gpus_all`).  Typically, to use GPU, its value is set to "all".
 
 
 #### `clams_params`

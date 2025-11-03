@@ -78,6 +78,7 @@ import csv
 import json
 import datetime
 import time
+import re
 import warnings
 import subprocess
 import argparse
@@ -313,6 +314,14 @@ def main():
                 cf["job_id"] = conffile["id"] 
             else:
                 raise RuntimeError("No job ID specified on commandline or in config file.") 
+        
+        # Validate format of the job ID
+        id_pattern = r"^[a-zA-Z0-9_\-+]+\Z"
+        if not re.fullmatch(id_pattern, cf["job_id"]):
+            raise ValueError("Job ID may contain only letters, numbers, `_`, `-`, `+`.")
+        if len(cf["job_id"]) > 72:
+            raise ValueError("Job ID must be no more than 72 characters long.")
+
 
         if cli_job_name is not None:
             cf["job_name"] = cli_job_name
@@ -476,8 +485,8 @@ def main():
         if "clams_apps" in conffile:
             # Check for valid values
             for app in conffile["clams_apps"]:
-                if not isinstance(app, dict) and len(app)!= 1:
-                    raise RuntimeError("CLAMS apps must be specified as single-item dictionaries.") 
+                if not isinstance(app, dict):
+                    raise RuntimeError("CLAMS apps must be specified as dictionaries.") 
                 elif not any(key in app for key in ["image", "endpoint"]):
                     raise RuntimeError("CLAMS apps must have a key of 'image' or 'endpoint'.") 
 
@@ -586,6 +595,11 @@ def main():
     except RuntimeError as e:
         print("Failed to configure job")
         print("Runtime Error:", e)
+        raise SystemExit from e
+
+    except ValueError as e:
+        print("Bad value encountered while configuring job")
+        print("Value Error:", e)
         raise SystemExit from e
 
 
