@@ -100,16 +100,30 @@ from drawer.mmif_adjunct import make_blank_mmif, mmif_check
 
 # Import post-processing modules, if available
 try:
-    import visaid_builder.post_proc_item
+    from visaid_builder.post_proc_item import run_post as vb_run_post
 except ImportError as e:
     print("Import error:", e)
     print("Warning: `visaid_builder` module not found.  Will not use.")
 
 try:
-    import transcript_converter.post_proc_item
+    from transcript_converter.post_proc_item import run_post as aatc_run_post
 except ImportError as e:
+    # This exception handling can be phased out once migration to regular
+    # Python packages is done.
     print("Import error:", e)
-    print("Warning: `transcript_converter` module not found.  Will not use.")
+    print("aapb-transcript-converter module not installed in environment.")
+    print("Will try to import it from local directory.")
+    try:
+        from transcript_converter.transcript_converter.post_proc_item import run_post as aatc_run_post
+    except ImportError as f:
+        print("Import error:", f)
+        print("`transcript_converter.transcript_converter` module not found.")
+        print("Will try to import it from legacy location.")
+        try:
+            from transcript_converter.post_proc_item import run_post as aatc_run_post
+        except ImportError as g:
+            print("Import error:",g)
+            print("Warning: `transcript_converter` module not found.  Will not use.")
    
 
 
@@ -1233,7 +1247,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 # Call separate procedure for appropraite post-processing
                 if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
-                    pp_errors, pp_problems, pp_infos = visaid_builder.post_proc_item.run_post(
+                    pp_errors, pp_problems, pp_infos = vb_run_post(
                         item=item, 
                         cf=cf,
                         params=post_proc )
@@ -1251,9 +1265,9 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     if pp_infos not in [ None, [] ]:
                         item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
 
-                elif post_proc["name"].lower() in ["transcript_converter"] :
+                elif post_proc["name"].lower() in ["transcript_converter", "aapb-transcript-converter", "aatc"] :
 
-                    pp_errors, pp_problems, pp_infos = transcript_converter.post_proc_item.run_post(
+                    pp_errors, pp_problems, pp_infos = aatc_run_post(
                         item=item, 
                         cf=cf,
                         params=post_proc )
