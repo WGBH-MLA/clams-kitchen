@@ -103,29 +103,13 @@ try:
     from visaid_builder.post_proc_item import run_post as vb_run_post
 except ImportError as e:
     print("Import error:", e)
-    print("Warning: `visaid_builder` module not found.  Will not use.")
+    print("Warning: `visaid_builder` package not found.  Will not use.")
 
 try:
     from transcript_converter.post_proc_item import run_post as aatc_run_post
 except ImportError as e:
-    # This exception handling can be phased out once migration to regular
-    # Python packages is done.
-    print("Import error:", e)
-    print("aapb-transcript-converter module not installed in environment.")
-    print("Will try to import it from local directory.")
-    try:
-        from transcript_converter.transcript_converter.post_proc_item import run_post as aatc_run_post
-    except ImportError as f:
-        print("Import error:", f)
-        print("`transcript_converter.transcript_converter` module not found.")
-        print("Will try to import it from legacy location.")
-        try:
-            from transcript_converter.post_proc_item import run_post as aatc_run_post
-        except ImportError as g:
-            print("Import error:",g)
-            print("Warning: `transcript_converter` module not found.  Will not use.")
-   
-
+    print("Import error:",e)
+    print("Warning: `transcript_converter` package not found.  Will not use.")
 
 
 ############################################################################
