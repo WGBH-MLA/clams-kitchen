@@ -142,8 +142,8 @@ def main():
         help="Print a list of job item numbers for items skipped during the job.")
     parser.add_argument("--last-consec", action="store_true",
         help="Print the last of item numbers consecutively attempted (useful for restarting aborted jobs)")
-    parser.add_argument("logfile", metavar="LOG",
-        help="Path to a single runlog (in JSON format)")
+    parser.add_argument("logfile", metavar="COOKLOG",
+        help="Path to a single cooklog, in JSON format, from clams-kitchen")
 
     args = parser.parse_args()
 

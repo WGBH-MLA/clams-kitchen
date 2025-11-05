@@ -1,10 +1,10 @@
 # CLAMS Kitchen
-Python routines for cooking CLAMS recipes (running CLAMS apps and processing the output MMIF).
+Python routines for cooking CLAMS recipes (i.e., running CLAMS apps and processing the output MMIF).
 
 
 ## Overview
 
-The `cook` command runs CLAMS applications against a batch of assets by looping through the items in the batch, taking several steps with each one.  For each item, the script performs the following steps:
+The `cook` command runs CLAMS apps on a batch of assets by looping through the items, taking several steps with each one.  For each item, it performs the following steps:
   - Checking for media files
   - Downloading media files from Sony Ci (optional)
   - Creating a "blank" MMIF file for the asset
@@ -13,9 +13,9 @@ The `cook` command runs CLAMS applications against a batch of assets by looping 
   - Logging of each item processed
   - Cleaning up (removing) downloaded media (optional)
 
-Currently, the main post-processing routines that have been defined are associated with the creation of visual indexes ("visaids") for video files, as performed by the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) module, using the output the [CLAMS SWT detection app](https://github.com/clamsproject/app-swt-detection).  
-
-Additional post-processing for transcripts and transcript metadata is performed by the [transcript_converter](https://github.com/WGBH-MLA/transcript_converter) module, using the output of the [CLAMS Whisper Wrapper app](https://apps.clams.ai/whisper-wrapper/) or the [CLAMS Parakeet Wrapper app](https://apps.clams.ai/parakeet-wrapper/).
+Currently, the main post-processing routines that have been defined are
+1. Processing associated with the creation of visual indexes ("visaids") for video files, performed by the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) module, using the output the [CLAMS SWT detection app](https://github.com/clamsproject/app-swt-detection).  
+2. Processing for transcripts and transcript metadata, performed by the [transcript_converter](https://github.com/WGBH-MLA/transcript_converter) module, using the output of the [CLAMS Whisper Wrapper app](https://apps.clams.ai/whisper-wrapper/) or the [CLAMS Parakeet Wrapper app](https://apps.clams.ai/parakeet-wrapper/).
 
 
 ## Installation
@@ -24,18 +24,14 @@ Clone this repository.  Change to the repository directory and do a `pip install
 
 If you wish to use the included `media_availability` module (which downloads media files from Sony Ci), then the `jq` executable must be available in the local environment.
 
-To use the `visaid_builder` or `transcript_converter` postprocessing routlines, you will need to install those separately.
-
-To use the visaid_builder routines in the CLAMS kitchen, clone the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) project, and install via `pip install visaid_builder`.
-
-To use the transcript_converter routines, clone the [transcript_converter](https://github.com/WGBH-MLA/transcript_converter) project, and install via `pip install transcript_converter`.
+To use the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) or [transcript_converter](https://github.com/WGBH-MLA/transcript_converter) packages for postprocessing, then you will need to install those separately.
 
 
 ## Usage
 
-The main script can be run with command ,`cook`.  Use `cook -h` for help.
+The main script can be run with the `cook` command.  Run `cook -h` for help.
 
-You will need a recipe -- i.e., configuration file -- which is a JSON file.  See the "Configuration" section betlow for details.  Several example files are included in the `sample_config` directory.
+You will need a recipe -- i.e., configuration file -- which is a JSON file.  See the "Configuration" section betlow for details.  Several example files are included in the `sample_recipes` directory.
 
 You will also need a batch definition list, which is a CSV file indicating the media items to be proccessed.  The first column must be `asset_id`.  In addition, at least one other column is required.  It must be either `media_filename` (just the filename, not the full path, for media that is already locally available in the media directory) or `sonyci_id` (for media that needs to be acquired from Sony Ci).
 
@@ -46,7 +42,7 @@ The following fields can be set in the recipe JSON file.  Alternatively, several
 
 ### Mandatory fields
 
-These fields are required for execution of `run_job.py`.
+These recipe fields are strictly required to run `cook`.
 
 #### `id`
 
@@ -67,7 +63,7 @@ This is the path to the directory where data output from the batch run will be s
 
 ### Essential fields
 
-These fields are essential in that you need them in order to do useful CLAMS processing.
+These fields are essential, in that you need them in order to do useful CLAMS processing.
 
 #### `local_base` and `mnt_base`
 
@@ -91,8 +87,7 @@ A boolean indicating whether to call Docker with GPU (CUDA) enabled.
 
 #### `clams_apps`
 
-As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create an associative array for a pipeline of CLAMS apps.  Each item must have a key named either "image" or "endpoint" and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `gpus` indicating whe the value of the "gpus" parameter passed to Docker (overiding any value set by `docker_gpus_all`).  Typically, to use GPU, its value is set to "all".
-
+As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create an associative array for a pipeline of CLAMS apps.  Each item must have a key named either `"image"` or `"endpoint"` and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `"gpus"` indicating whe the value of the `gpus` parameter passed to Docker (overiding any value set by `docker_gpus_all` above).  Typically, to use GPU, its value is set to `"all"`.
 
 #### `clams_params`
 
@@ -100,7 +95,7 @@ A dictionary of parameters and values to be passed to the CLAMS apps
 
 #### `post_proc`
 
-A dictionary specifying a pre-defined procedure to be run after the CLAMS apps -- for instance creating artifacts like slates or visual aids from the output of SWT.
+A dictionary specifying a pre-defined procedure to be run after the CLAMS apps -- for instance creating artifacts like slates or visual aids from the output of SWT.  See the config files in the `sample_reciples` for examples.
 
 
 ### Optional fields
@@ -115,7 +110,7 @@ These can be used to run part of a batch defined in the batch definition list.  
 
 #### `overwrite_mmif`
 
-When this is false, MMIF files matching the asset ID and batch ID will left in place, and not recreated.  If this true, the MMIF processing will be redone, and the MMIF files will be overwritten.  The default is `false`.
+When this is `false`, MMIF files matching the asset ID and batch ID will be left in place, and not re-created.  If this is `true`, the MMIF processing will be redone, and the MMIF files will be overwritten.  The default is `false`.
 
 #### `cleanup_media_per_item`
 
@@ -137,9 +132,12 @@ If media files are to be downloaded from Sony Ci using the included `media_avail
   - `workspace_id`
 
 
-## Reviewing logs
+## Logging
 
-Running a recipe creates and updates log files, as it is cooking, in JSON and CSV format.  These log files appear in the `results_dir`
+Cooking progress is logged as each item completes.  Log files with "cooklog" in the filename, in JSON and CSV format, are saved in the `results_dir`
+
+You can see a summary of the cooklog by pointing the `cookreview` command at the JSON version of a cooklog.  Run `cookreview -h` for help.
+
 
 ## Current limitations
 
