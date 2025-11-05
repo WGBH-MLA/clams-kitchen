@@ -94,9 +94,9 @@ logging.basicConfig(
 import requests
 
 # Import local modules
-import runlog_sum
-from drawer.media_availability import check_avail, make_avail, remove_media
-from drawer.mmif_adjunct import make_blank_mmif, mmif_check
+from . import runlog_sum
+from .drawer.media_availability import check_avail, make_avail, remove_media
+from .drawer.mmif_adjunct import make_blank_mmif, mmif_check
 
 # Import post-processing modules, if available
 try:

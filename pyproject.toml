@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clams-kitchen"
+version = "0.50"
+description = "Python scripts for cooking with CLAMS"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+dependencies = [
+    "requests>=2.31.0",
+    "mmif-python>=1.1.2"
+]
+
+[project.scripts]
+cook = "clams_kitchen.run_job:main"
+cookingreview = "clams_kitchen.runlog_sum:main"
+[project.urls]
+"Homepage" = "https://github.com/WGBH-MLA/clams-kitchen"
+"Source" = "https://github.com/WGBH-MLA/clams-kitchen"
+
+[tool.setuptools.packages.find]
+include = ["clams_kitchen"]

@@ -17,7 +17,8 @@ BYTES_LIMIT = 1500000000
 
 
 # location of helper bash script
-ci_url_sh_path = './drawer/bash_aux/ci_url.sh'
+script_dir = os.path.dirname(os.path.realpath(__file__))
+ci_url_sh_path = os.path.join(script_dir, 'bash_aux', 'ci_url.sh')
 
 # confirm ci_url is accessible via bash (which is what will call it).
 command = "[ -f " + ci_url_sh_path + " ] && echo exists || echo missing "

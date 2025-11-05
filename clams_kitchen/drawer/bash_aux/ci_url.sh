@@ -13,7 +13,8 @@ fi;
 
 # config_file_path=/var/www/html/application/config/ci.yml;
 #config_file_path=$(cd $(dirname "$0");pwd -P)/config/copy_ci.yml;
-config_file_path=$(cd $(dirname "$0");pwd -P)/../../secrets/ci.yml;
+#config_file_path=$(cd $(dirname "$0");pwd -P)/../../../secrets/ci.yml;
+config_file_path=$HOME/.clams-kitchen/secrets/ci.yml;
 
 
 
