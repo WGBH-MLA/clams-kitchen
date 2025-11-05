@@ -178,7 +178,7 @@ def write_tried_log(item, cf, tried_l):
     if log_l is not None:
         # Results files get a new name every time this script is run
         job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
-                                        "_" + cf["start_timestamp"] + "_runlog" )
+                                        "_" + cf["start_timestamp"] + "_cooklog" )
         job_results_log_csv_path  = job_results_log_file_base + ".csv"
         job_results_log_json_path  = job_results_log_file_base + ".json"
 
@@ -249,7 +249,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     parser.add_argument("recipe", metavar="RECIPE",
         help="Path for the recipe -- a JSON job configuration file")
     parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
-        help="Path for the CSV file defining the batch of items to be processed.")
+        help="Path for batch definition list -- the CSV file listing the items to be processed.")
     parser.add_argument("job_id", metavar="JOBID", nargs="?",
         help="An identifer string for the job; no spaces allowed")
     parser.add_argument("job_name", metavar="JOBNAME", nargs="?",

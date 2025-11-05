@@ -119,15 +119,15 @@ def print_timing(tried_l):
         days = (ended-began).days
         seconds = (ended-began).seconds
 
-        print(f'First item began: {began.strftime("%Y-%m-%d %H:%M:%S")}')
-        print(f'Final item ended: {ended.strftime("%Y-%m-%d %H:%M:%S")}  ({days} days, {seconds} seconds later)')
+        print(f'Initial  item  began: {began.strftime("%Y-%m-%d %H:%M:%S")}')
+        print(f'Latest item finished: {ended.strftime("%Y-%m-%d %H:%M:%S")}  ({days} days, {seconds} seconds later)')
 
 
 def main():
     
     parser = parser = argparse.ArgumentParser(
-        prog='runlog_summarizer.py',
-        description='Creates a user-friendly summary from clams-kitchen runlog',
+        prog='cookreview',
+        description='Creates a user-friendly summary from clams-kitchen cooklog',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     

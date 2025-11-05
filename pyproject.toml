@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "clams-kitchen"
 version = "0.50"
-description = "Python scripts for cooking with CLAMS"
+description = "Python routines for cooking recipes with CLAMS"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
@@ -16,7 +16,8 @@ dependencies = [
 
 [project.scripts]
 cook = "clams_kitchen.run_job:main"
-cookingreview = "clams_kitchen.runlog_sum:main"
+cookreview = "clams_kitchen.runlog_sum:main"
+
 [project.urls]
 "Homepage" = "https://github.com/WGBH-MLA/clams-kitchen"
 "Source" = "https://github.com/WGBH-MLA/clams-kitchen"
