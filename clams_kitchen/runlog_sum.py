@@ -106,7 +106,10 @@ def print_infos(tried_l):
 
 def print_timing(tried_l):
 
-    if "time_began" not in tried_l[0]:
+    if not len(tried_l):
+        # no list of cooked items
+        pass
+    elif "time_began" not in tried_l[0]:
         # no timing info in runlog
         pass
     else:

@@ -231,6 +231,8 @@ def main():
 
     # get the time when the job began
     t0 = datetime.datetime.now()
+    print()
+    print(f'Starting up clams-kitchen (verion {__version__}) at {t0.strftime("%Y-%m-%d %H:%M:%S")}')
 
     ############################################################################
     # Handle command line arguments
@@ -673,16 +675,15 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     ############################################################################
     # Main loop or processing pool
 
-    print("Will start processing.")
-    print()
-
     # The `tried_l` variable is the main data structure for recording results of the run.  
     # It is a list of dicts.
     # In MP mode, it is a `Manager.list`.  In serial mode, it is a plain list.
     tried_l = []
 
     if cf["parallel"] == 0:
-        print(f'Will process items serially...')
+        print(f'Will process items serially.')
+        print()
+        print("About to start cooking...")
         print()
         for batch_item in batch_l:
             run_item( batch_item, cf, clams, post_procs, tried_l, None) 
@@ -690,7 +691,9 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     else:
         print(f'Will process {cf["parallel"]} items in parallel.')
         if cf["stagger"] > 0:
-            print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s...')
+            print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s.')
+        print()
+        print("About to start cooking...")
         print()
 
         with mp.Manager() as manager:
@@ -722,16 +725,18 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     # Print status and summary after all items have been processed
 
     print()
-    print()
     print("***************************************************************************")
 
     # Write the log file once more because
     #   (1) want to make sure all items got logged
     #   (2) need to get the path of the JSON log file
     print()
-    job_results_log_json_path = write_tried_log(None, cf, tried_l)
-    print()
-
+    if len(tried_l):
+        job_results_log_json_path = write_tried_log(None, cf, tried_l)
+        print()
+    else:
+        job_results_log_json_path = None
+    
     # Print summary data 
     if len(tried_l) == len(batch_l):
         print(f"Done with {len(tried_l)} items.")
@@ -745,10 +750,9 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     tn = datetime.datetime.now()
     days = (tn-t0).days
     seconds = (tn-t0).seconds
-    print("Job finished at", tn.strftime("%Y-%m-%d %H:%M:%S"))
+    print("Shutting down clams-kitchen at", tn.strftime("%Y-%m-%d %H:%M:%S"))
     print("Total elapsed time:", days, "days,", seconds, "seconds")
     print(f'Results logged in {job_results_log_json_path}')
-    print()
     print()
 
 
