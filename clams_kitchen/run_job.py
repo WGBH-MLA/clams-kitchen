@@ -84,6 +84,7 @@ import subprocess
 import argparse
 import multiprocessing as mp
 import logging
+import importlib.metadata
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -110,6 +111,9 @@ try:
 except ImportError as e:
     print("Import error:",e)
     print("Warning: `transcript_converter` package not found.  Will not use.")
+
+# get version number from `pyproject.toml` file
+__version__ = importlib.metadata.version("clams-kitchen")
 
 
 ############################################################################
@@ -231,18 +235,19 @@ def main():
     ############################################################################
     # Handle command line arguments
 
-    app_desc="""
-    Performs CLAMS processing and post-processing in a loop as specified in a job configuration file.
+    app_desc = f"clams-kitchen (version {__version__})\n"
+    app_desc += """
+Performs CLAMS processing and post-processing in a loop as specified in a recipe (a job configuration file).
 
-    Note: Any values passed on the command line override values in the configuration file.
+(Note: Any values passed on the command line override values in the recipe.)
     """
     parser = parser = argparse.ArgumentParser(
-            prog='python run_job.py',
+            prog='cook',
             description=app_desc,
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+            formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("job_conf_path", metavar="CONFIG",
-        help="Path for the JSON job configuration file")
+    parser.add_argument("recipe", metavar="RECIPE",
+        help="Path for the recipe -- a JSON job configuration file")
     parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
         help="Path for the CSV file defining the batch of items to be processed.")
     parser.add_argument("job_id", metavar="JOBID", nargs="?",
@@ -254,7 +259,7 @@ def main():
 
     args = parser.parse_args()
 
-    job_conf_path = args.job_conf_path
+    job_conf_path = args.recipe
 
     if args.batch_def_path is not None:
         cli_batch_def_path = args.batch_def_path
