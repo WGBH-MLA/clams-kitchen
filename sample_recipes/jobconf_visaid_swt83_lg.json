@@ -1,0 +1,82 @@
+{
+  "id": "FILL",
+  "local_base":  "/home/USER/",
+  "results_dir": "stovetop/FILL",
+  "def_path":    "stovetop/FILL/batch.csv",
+  "media_dir":   "batchmedia",
+  "start_after_item": 0,
+  "end_after_item": null,
+  "overwrite_mmif": false,
+  "cleanup_media_per_item": true,
+  "cleanup_beyond_item": 0,
+  "filter_warnings": "ignore",
+  "parallel": 4,
+  "stagger": 30,
+  "clams_run_cli": true,
+  "clams_run_cli_gpu": true,
+  "clams_images": [
+    "ghcr.io/clamsproject/app-swt-detection:v8.3"
+    ],
+  "clams_params": [
+    {
+      "pretty": "true",
+      "useClassifier": "true",
+      "useStitcher": "true",
+      "tpModelName": "convnextv2_large",
+      "tpUsePosModel": "true",
+      "tpModelBatchSize": 40,
+      "tpStartAt": 0,
+      "tpStopAt": 9000000,
+      "tpSampleRate": 250,
+      "tfMinTPScore": 0.05,
+      "tfMinTFScore": 0.25,
+      "tfMinTFDuration": 1900,
+      "tfAllowOverlap": "false",
+      "tfLabelMapPreset": "nopreset",
+      "tfLabelMap": {
+        "B":     "bars",
+        "S":     "slate",
+        "IN":    "person & chyron",
+        "Y":     "other chyron",
+        "KU":    "other chyron",
+        "E":     "person & extra text",
+        "F":     "filmed text",
+        "M":     "other text",
+        "GLOTW": "other text",
+        "CR":    "credits",
+        "P":     "-",
+        "-":     "-"
+        }
+    }
+  ],
+  "post_procs": [
+    {
+      "name": "visaid_builder",
+      "artifacts": ["data", "slates","visaids"],
+      "prog_start_min": 3000,
+      "prog_start_max": 150000,
+      "include_only": null,
+      "exclude": [],
+      "max_unsampled_gap": 60000,
+      "default_subsampling": 60100,
+      "subsampling": {
+        "bars":                120100,
+        "slate":               9900,
+        "person & chyron":     15100,
+        "other chyron":        30100,
+	      "person & extra text": 30100,
+        "filmed text":         30100,
+        "other text":          4900,
+        "credits":             1900 
+        },
+      "deselected_scene_types": ["filmed text", "other text", "person & extra text"],
+      "include_first_time": false,
+      "include_final_time": false,
+      "job_id_in_visaid_filename": false,
+      "display_video_duration": true,
+      "display_job_info": false,
+      "display_image_ms": true,
+      "aapb_timecode_link": true
+    }
+  ]
+}

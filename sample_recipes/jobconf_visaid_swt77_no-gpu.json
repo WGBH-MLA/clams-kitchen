@@ -10,9 +10,8 @@
   "cleanup_media_per_item": true,
   "cleanup_beyond_item": 4,
   "filter_warnings": "ignore",
-  "parallel": 4,
-  "stagger": 30,
-  "docker_gpus_all": true,
+  "parallel": 0,
+  "docker_gpus_all": false,
   "clams_apps": [
     { "image": "ghcr.io/clamsproject/app-swt-detection:v7.7" }
   ],

@@ -1149,9 +1149,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                             # parameter is a dictionary; break it into separately
                             # specified parameters
                             for mkey in clams["param_sets"][clamsi][p]:
-                                app_params.append( "--" + p )
+                                paramname = "--" + p 
                                 mvalue = clams["param_sets"][clamsi][p][mkey]
-                                app_params.append( mkey + ":" +  mvalue )
+                                paramvalue = f"{mkey}:{mvalue}"
+                                app_params.append( paramname + "=" + paramvalue )
 
                     # Work-around to delimit values passed with --map flag:
                     # Add a dummy flag
