@@ -45,6 +45,8 @@ job configuration file.  It has the following keys:
    - save_cli_stderr (bool) indicating whether to save the content of stderr from
          CLAMS app run 
          (jobconf key: "clams_save_cli_stderr")
+   - show_docker_cmd (bool) indicating whether display command or URL for CLAMS app             
+         (jobconf key: "show_docker_cmd")
 
 `post_procs` - a list of dicts each with the parameters for a post-process
 
@@ -259,7 +261,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     parser.add_argument("--just-get-media", action="store_true",
         help="Just acquire the media listed in the batch definition file.")
     parser.add_argument("--show-docker-cmd", action="store_true",
-        help="Display the literal `docker run` command constructed for CLI-based CLAMS apps.")
+        help="Display the `docker run` command (for CLI apps) or the URL (for webservice apps) for the CLAMS run.")
 
     args = parser.parse_args()
 
@@ -488,13 +490,6 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         else:
             cf["stagger"] = 20
         
-        if cli_show_docker_command:
-            cf["show_docker_command"] = True
-        elif "show_docker_command" in conffile:
-            cf["show_docker_command"] = bool(conffile["show_docker_command"])
-        else:
-            cf["show_docker_command"] = False
-
 
         # CLAMS config
 
@@ -537,6 +532,16 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         # Make sure we have the right number of parameter sets
         if len(clams["param_sets"]) != clams["num_stages"]:
             raise RuntimeError("Number of CLAMS apps not equal to number of sets of CLAMS params.") 
+
+        # Diagnostic display of CLAMS commands        
+        if cli_show_docker_command:
+            clams["show_docker_command"] = True
+        elif "show_docker_command" in conffile:
+            clams["show_docker_command"] = bool(conffile["show_docker_command"])
+        else:
+            clams["show_docker_command"] = False
+
+
          
 
         # Each app specified as a Docker image can be run with the "--gpus" flag set to a 
@@ -1076,6 +1081,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     qsp = ""
 
                 uri = endpoint + qsp
+                if clams["show_docker_command"]:
+                    print(ins + uri) 
 
                 headers = {'Accept': 'application/json'}
 
@@ -1177,7 +1184,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 coml.append("/mmif/" + output_mmif_filename)
 
                 #print(coml) # DIAG
-                if cf["show_docker_command"]:
+                if clams["show_docker_command"]:
                     print(ins + " ".join(coml) ) 
 
                 # actually run the CLAMS app
