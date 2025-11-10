@@ -258,6 +258,8 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         help="A human-readable name for the job; may include spaces; not valid without a JOBID")
     parser.add_argument("--just-get-media", action="store_true",
         help="Just acquire the media listed in the batch definition file.")
+    parser.add_argument("--show-docker-cmd", action="store_true",
+        help="Display the literal `docker run` command constructed for CLI-based CLAMS apps.")
 
     args = parser.parse_args()
 
@@ -281,6 +283,10 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
     cli_just_get_media = args.just_get_media
 
+    if args.show_docker_cmd:
+        cli_show_docker_command = True
+    else:
+        cli_show_docker_command = False
 
     ############################################################################
     # Process info in the job config file to set up this job.
@@ -420,7 +426,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         if cli_just_get_media:
             cf["just_get_media"] = True
         elif "just_get_media" in conffile:
-            cf["just_get_media"] = conffile["just_get_media"]
+            cf["just_get_media"] = bool(conffile["just_get_media"])
         else:
             cf["just_get_media"] = False
 
@@ -453,12 +459,12 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             cf["include_only_items"] = None
 
         if "overwrite_mmif" in conffile:
-            cf["overwrite_mmif"] = conffile["overwrite_mmif"]
+            cf["overwrite_mmif"] = bool(conffile["overwrite_mmif"])
         else:
             cf["overwrite_mmif"] = False
 
         if "cleanup_media_per_item" in conffile:
-            cf["cleanup_media_per_item"] = conffile["cleanup_media_per_item"]
+            cf["cleanup_media_per_item"] = bool(conffile["cleanup_media_per_item"])
         else:
             cf["cleanup_media_per_item"] = False
         
@@ -481,6 +487,13 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             cf["stagger"] = conffile["stagger"]
         else:
             cf["stagger"] = 20
+        
+        if cli_show_docker_command:
+            cf["show_docker_command"] = True
+        elif "show_docker_command" in conffile:
+            cf["show_docker_command"] = bool(conffile["show_docker_command"])
+        else:
+            cf["show_docker_command"] = False
 
 
         # CLAMS config
@@ -1164,7 +1177,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 coml.append("/mmif/" + output_mmif_filename)
 
                 #print(coml) # DIAG
-                #print( " ".join(coml) ) # DIAG
+                if cf["show_docker_command"]:
+                    print(ins + " ".join(coml) ) 
 
                 # actually run the CLAMS app
                 result = subprocess.run(coml, capture_output=True, text=True)
