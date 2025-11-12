@@ -87,6 +87,7 @@ import argparse
 import multiprocessing as mp
 import logging
 import importlib.metadata
+import traceback
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -1259,49 +1260,66 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             else:
                 print(ins + "Will attempt to run postprocessing procedure:", post_proc["name"])
 
-                # Call separate procedure for appropraite post-processing
-                if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
+                try:
+                    # Call separate procedure for appropraite post-processing
 
-                    pp_errors, pp_problems, pp_infos = vb_run_post(
-                        item=item, 
-                        cf=cf,
-                        params=post_proc )
+                    if post_proc["name"].lower() in ["swt", "visaid_builder", "visaid-builder", "visaid"] :
 
-                    if pp_errors not in [ None, [] ]:
-                        print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
-                        item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
-                        print(ins + "PROCEEDING.")
+                        pp_errors, pp_problems, pp_infos = vb_run_post(
+                            item=item, 
+                            cf=cf,
+                            params=post_proc )
 
-                    if pp_problems not in [ None, [] ]:
-                        print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
-                        item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
-                        print(ins + "PROCEEDING.")
+                        if pp_errors not in [ None, [] ]:
+                            print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
+                            item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
+                            print(ins + "PROCEEDING.")
 
-                    if pp_infos not in [ None, [] ]:
-                        item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
+                        if pp_problems not in [ None, [] ]:
+                            print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
+                            item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
+                            print(ins + "PROCEEDING.")
 
-                elif post_proc["name"].lower() in ["transcript_converter", "aapb-transcript-converter", "aatc"] :
+                        if pp_infos not in [ None, [] ]:
+                            item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
 
-                    pp_errors, pp_problems, pp_infos = aatc_run_post(
-                        item=item, 
-                        cf=cf,
-                        params=post_proc )
+                    elif post_proc["name"].lower() in ["transcript_converter", "aapb-transcript-converter", "aatc"] :
 
-                    if pp_errors not in [ None, [] ]:
-                        print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
-                        item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
-                        print(ins + "PROCEEDING.")
+                        pp_errors, pp_problems, pp_infos = aatc_run_post(
+                            item=item, 
+                            cf=cf,
+                            params=post_proc )
 
-                    if pp_problems not in [ None, [] ]:
-                        print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
-                        item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
-                        print(ins + "PROCEEDING.")
+                        if pp_errors not in [ None, [] ]:
+                            print(ins + "Warning:", post_proc["name"], "returned errors:", pp_errors)
+                            item["errors"] += [ post_proc["name"]+":"+e for e in pp_errors ]
+                            print(ins + "PROCEEDING.")
 
-                    if pp_infos not in [ None, [] ]:
-                        item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
+                        if pp_problems not in [ None, [] ]:
+                            print(ins + "Warning:", post_proc["name"], "encountered problems:", pp_problems)
+                            item["problems"] += [ post_proc["name"]+":"+p for p in pp_problems ]
+                            print(ins + "PROCEEDING.")
 
-                else:
-                    print(ins + "Invalid postprocessing procedure:", post_proc)
+                        if pp_infos not in [ None, [] ]:
+                            item["infos"] += [ post_proc["name"]+":"+m for m in pp_infos ]
+
+                    else:
+                        print(ins + "Invalid postprocessing procedure:", post_proc)
+
+                except Exception as e:
+                    print(ins + f'Postprocessing for `{post_proc["name"]}` failed!')
+                    print(ins + "Encountered error: " + e)
+
+                    traceback_str = traceback.format_exc()
+                    print(traceback_str) # DIAG
+                    error_filename = f'{item["asset_id"]}_POSTPROCESS-{post_proc["name"]}_stderr.txt'
+                    error_filepath = cf["messages_dir"] + "/" + error_filename
+                    print(ins + "Will save Traceback to " + error_filepath)
+                    with open( error_filepath, "w" ) as f:
+                            f.write(traceback_str)
+
+                    item["errors"] += [ post_proc["name"]+":exception" ]
+                    print(ins + "PROCEEDING.")
 
 
     ########################################################
