@@ -1311,7 +1311,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     print(ins + "Encountered error: ", e)
 
                     traceback_str = traceback.format_exc()
-                    error_filename = f'{item["asset_id"]}_POSTPROCESS-{post_proc["name"]}_stderr.txt'
+                    error_filename = f'{item["asset_id"]}_POSTPROCESS-{post_proc["name"]}_traceback.txt'
                     error_filepath = cf["messages_dir"] + "/" + error_filename
                     print(ins + "Will save Traceback to " + error_filepath)
                     with open( error_filepath, "w" ) as f:
