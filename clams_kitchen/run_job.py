@@ -1308,7 +1308,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
                 except Exception as e:
                     print(ins + f'Postprocessing for `{post_proc["name"]}` failed!')
-                    print(ins + "Encountered error: " + e)
+                    print(ins + "Encountered error: ", e)
 
                     traceback_str = traceback.format_exc()
                     print(traceback_str) # DIAG
