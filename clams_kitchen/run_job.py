@@ -35,8 +35,9 @@ with the corresponding jobconf file key in brackets.
 job configuration file.  It has the following keys:
    - apps (list of dicts) each dict each with a key of "image" or "endpoint" 
          and the relevant Docker image or web service endpoint as the value.
-         Each dict also has a key indicating whe the value of the "gpus" parameter
-         passed to Docker.  Usually, to use GPU, it is set to "all".
+         Each dict also has a key indicating the value of the "gpus" parameter
+         passed to Docker.  Usually, to use GPU, it is set to "all".  (If you 
+         do not want to use any GPU, it is best to omit the "gpus" key.)
          (jobconf key: "clams_apps")
    - param_sets (list of dicts) each with parameters for a CLAMS app
          (jobconf key: "clams_params")
@@ -1199,7 +1200,6 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         print(ins + "Will save stderr to " + error_filepath)
                         with open( error_filepath, "w" ) as f:
                             f.write(result.stderr)
-                    item["problems"] += [ "clams-" + str(clamsi) + ":stderr" ]
                 else:
                     print(ins + "CLAMS app finished without errors.")
 
