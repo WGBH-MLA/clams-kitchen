@@ -20,6 +20,7 @@ with the corresponding jobconf file key in brackets.
    - end_after_item (int)                ["end_after_item"]
    - include_only_items (list of ints)   ["include_only_items"]
    - overwrite_mmif (bool)               ["overwrite_mmif"]
+   - keep_mmifs (list of ints)           ["keep_mmifs"]
    - cleanup_media_per_item (bool)       [cleanup_media_per_item"]
    - cleanup_beyond_item (int)           ["cleanup_beyond_item"]
    - parallel (int)                      ["parallel"]
@@ -472,6 +473,16 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             cf["overwrite_mmif"] = bool(conffile["overwrite_mmif"])
         else:
             cf["overwrite_mmif"] = False
+        
+        if "keep_mmifs" in conffile:
+            if isinstance( conffile["keep_mmifs"], int):
+                cf["keep_mmifs"] = [ conffile["keep_mmifs"] ]
+            elif isinstance( conffile["keep_mmifs"], list):
+                cf["keep_mmifs"] = conffile["keep_mmifs"]
+            else:
+                raise RuntimeError("Invalid value for key 'keep_mmifs'.")
+        else:
+            cf["keep_mmifs"] = []
 
         if "cleanup_media_per_item" in conffile:
             cf["cleanup_media_per_item"] = bool(conffile["cleanup_media_per_item"])
@@ -837,9 +848,6 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     item["time_ended"] = ""
     item["elapsed_seconds"] = None
 
-    # set the index of the MMIF files so far for this item
-    mmifi = -1
-
     ########################################################
     # Add media to the availability place, if it is not already there,
     # and update the dictionary
@@ -941,7 +949,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
     print(ins)
     print(ins + '# MAKING BLANK MMIF')
-    mmifi += 1
+    mmifi = 0
 
     if not cf["media_required"]:
         print(ins + "Media declared not required, implying that blank MMIF is not required.") 
@@ -957,7 +965,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         mmif_path = cf["mmif_dir"] + "/" + mmif_filename
 
         # Check to see if it exists; if not create it
-        if ( os.path.isfile(mmif_path) and not cf["overwrite_mmif"]):
+        if ( os.path.isfile(mmif_path) and ( mmifi in cf["keep_mmifs"] or not cf["overwrite_mmif"] ) ):
             print(ins + "Will use existing MMIF:    " + mmif_path)
         else:
             print(ins + "Will create MMIF file:     " + mmif_path)
@@ -1035,7 +1043,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
         # Decide whether to use existing MMIF file or create a new one
         make_new_mmif = True
-        if ( os.path.isfile(mmif_path) and not cf["overwrite_mmif"]):
+        if ( os.path.isfile(mmif_path) and ( mmifi in cf["keep_mmifs"] or not cf["overwrite_mmif"] ) ):
             # Check to make sure file isn't implausibly small.
             # (Sometimes aborted processes leave around 0 byte mmif files.)
             if ( os.path.getsize(mmif_path) > 100 ):
