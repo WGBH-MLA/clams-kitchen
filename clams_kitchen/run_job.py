@@ -400,6 +400,12 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         else:
             cf["shell_cache_dir"] = None
 
+        # `config_dir` is optional and is always relative to the `shell_base`
+        if "config_dir" in conffile:
+            cf["shell_config_dir"] = shell_base + conffile["config_dir"]
+        else:
+            cf["shell_config_dir"] = None
+
         # `results_dir` is required
         results_dir = local_base + conffile["results_dir"]
         shell_results_dir = shell_base + conffile["results_dir"]
@@ -1150,6 +1156,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     coml += [ "-v", cf["shell_media_dir"] + '/:/data' ]
                 if cf["shell_cache_dir"]:
                     coml += [ "-v", cf["shell_cache_dir"] + '/:/cache' ]
+                if cf["shell_config_dir"]:
+                    coml += [ "-v", cf["shell_config_dir"] + '/:/app/config' ]
                 if "gpus" in clams["apps"][clamsi]:
                     coml += [ "--gpus", clams["apps"][clamsi]["gpus"] ]
                 coml += [
