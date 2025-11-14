@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clams-kitchen"
-version = "0.54"
+version = "0.55"
 description = "Python routines for cooking recipes with CLAMS"
 readme = "README.md"
 requires-python = ">=3.8"
