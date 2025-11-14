@@ -21,10 +21,10 @@
       "pretty": "true",
       "model": "turbo",
       "language": "en",
-      "conditionOnPreviousText": false,
-      "noSpeechThreshold": 0.1,
-      "runningTime": true,
-      "hwFetch": true
+      "conditionOnPreviousText": "false",
+      "noSpeechThreshold": "0.1",
+      "runningTime": "true",
+      "hwFetch": "true"
     }
   ],
   "post_procs": [
