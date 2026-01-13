@@ -29,11 +29,11 @@ To use the [visaid_builder](https://github.com/WGBH-MLA/visaid_builder) or [tran
 
 ## Usage
 
-The main script can be run with the `cook` command.  Run `cook -h` for help.
+The main script can be run with the `cook` command.  Run `cook -h` for help and to see a list of arguments that can set or overridden from the comand line.
 
-You will need a recipe -- i.e., configuration file -- which is a JSON file.  See the "Configuration" section betlow for details.  Several example files are included in the `sample_recipes` directory.
+You will need a recipe -- i.e., configuration file -- which is a JSON file.  See the "Configuration" section betlow for details.  Several example files are included in the `sample_recipes` directory.  This file is required; it is not possible to set all relevant parameters just from the command line.
 
-You will also need a batch definition list, which is a CSV file indicating the media items to be proccessed.  The first column must be `asset_id`.  In addition, at least one other column is required.  It must be either `media_filename` (just the filename, not the full path, for media that is already locally available in the media directory) or `sonyci_id` (for media that needs to be acquired from Sony Ci).
+You will also need a batch definition list, which is a CSV file indicating the media items to be proccessed.  The first column must be `asset_id`.  In addition, at least one other column is required.  It must be either `media_filename` (just the filename, not the full path, for media that is already locally available in the media directory) or `sonyci_id` (for media that needs to be acquired from Sony Ci).  This file is required; it is not possible to specify the batch items just from the command line.
 
 
 ## Recipe configuration
@@ -87,15 +87,15 @@ A boolean indicating whether to call Docker with GPU (CUDA) enabled.
 
 #### `clams_apps`
 
-As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create an associative array for a pipeline of CLAMS apps.  Each item must have a key named either `"image"` or `"endpoint"` and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `"gpus"` indicating whe the value of the `gpus` parameter passed to Docker (overiding any value set by `docker_gpus_all` above).  Typically, to use GPU, its value is set to `"all"`.
+As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create a list of dictionaries representing a pipeline of CLAMS apps.  Each item in the list must have a key named either `"image"` or `"endpoint"` and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `"gpus"` indicating whe the value of the `gpus` parameter passed to Docker (overiding any value set by `docker_gpus_all` above).  Typically, to use GPU, its value is set to `"all"`.
 
 #### `clams_params`
 
-A dictionary of parameters and values to be passed to the CLAMS apps
+A list of dictionaries of parameters and values to be passed to the CLAMS apps.  Each item in this list corresponds to an item in the list of CLAMS apps given by `clams_images`, `clams_endpoints`, or `clams_apps` above.
 
 #### `post_proc`
 
-A dictionary specifying a pre-defined procedure to be run after the CLAMS apps -- for instance creating artifacts like slates or visual aids from the output of SWT.  See the config files in the `sample_reciples` for examples.
+A list of dictionaries, each specifying a pre-defined procedure to be run after all the CLAMS apps -- for instance creating artifacts like slates or visaids from the output of SWT-detection, or creating transcripts of various flavors from the output of the Whisper wrapper.
 
 
 ### Optional fields
@@ -106,11 +106,27 @@ This is a human-readable identifier for the batch.  If it is not specified, the 
 
 #### `start_after_item` and `end_after_item`
 
-These can be used to run part of a batch defined in the batch definition list.  (Useful for resuming batches that were interupted.)
+These can be used to run part of a batch defined in the batch definition list.  (This is useful for resuming batches that were interupted.)
+
+#### `include_only_items`
+
+This is a list of ints, indicating the item number of items in the batch definition list to be processed.  (This is useful for redoing only selected items in a large batch.)
 
 #### `overwrite_mmif`
 
 When this is `false`, MMIF files matching the asset ID and batch ID will be left in place, and not re-created.  If this is `true`, the MMIF processing will be redone, and the MMIF files will be overwritten.  The default is `false`.
+
+#### `keep_mmifs`
+
+This is a list of ints representing stages of CLAMS processing, where `0` is the creation of blank MMIF.  When `overwrite_mmif` is set to `true`, this list allows selected stages of MMIF processing to be maintained.  (This is useful if, for example, you want to keep the first stage of MMIF processing, but redo the second stage.)
+
+#### `just_get_media`
+
+When this is `true`, only the media acquisition step of the job is run.  It implies that the media will not be cleaned up.
+
+#### `media_requried`
+
+Defaults to `true`.  When this is `false`, the job will be attemped while skipping the media acquisition step for each item.  (This is useful for stages of CLAMS processing or postprocesing that requires access to existing MMIF files but does not have to touch the source media.)
 
 #### `cleanup_media_per_item`
 
@@ -120,6 +136,14 @@ Controls whether media files are deleted after a run is complete.  The default i
 
 Specifies the item in the batch beyond which media files are to be deleted (assuming `cleanup_media_per_item` is true).  The default is 0.
 
+#### `no_log`
+
+Boolean indicating that cooklog files should not be written.  Default: `false`
+
+
+### Sample configs
+
+For working examples of config files that can be modified to suit other purposes, see the files in the `sample_reciples` directory.
 
 ## Media 
 

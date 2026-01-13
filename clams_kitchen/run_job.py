@@ -13,7 +13,8 @@ with the corresponding jobconf file key in brackets.
    - start_timestamp (str)
    - job_id (str)                        ["id"]
    - job_name (str)                      ["name"]
-   - logs_dir (str)    
+   - logs_dir (str)
+   - no_log (str)                        ["no_log"]    
    - just_get_media (bool)               ["just_get_media"]
    - media_required (bool)               ["media_required"]
    - start_after_item (int)              ["start_after_item"]
@@ -21,7 +22,7 @@ with the corresponding jobconf file key in brackets.
    - include_only_items (list of ints)   ["include_only_items"]
    - overwrite_mmif (bool)               ["overwrite_mmif"]
    - keep_mmifs (list of ints)           ["keep_mmifs"]
-   - cleanup_media_per_item (bool)       [cleanup_media_per_item"]
+   - cleanup_media_per_item (bool)       ["cleanup_media_per_item"]
    - cleanup_beyond_item (int)           ["cleanup_beyond_item"]
    - parallel (int)                      ["parallel"]
    - stagger (int)                       ["stagger"]
@@ -167,40 +168,44 @@ def write_tried_log(item, cf, tried_l):
     else:
         ins = ""
 
-    # Conversion may be necessary if object passed in was a ListProxy instead of
-    # plain list.
-    # This step has been known to cause problems with multiprocessing, especially
-    # with items rapidly or many items being updated concurrently.  If we can't 
-    # convert to a list, no problem.  
-    log_l = None
-    try:
-        log_l = list(tried_l)
-    except Exception as e:
-        print(ins + "High volume IPC prevented immediate logging of this item.")
-        print(ins + "(This item will still be included in log eventually.)")
+    if cf["no_log"]:
+        return None
 
-    # If we got a log list, write it out
-    if log_l is not None:
-        # Results files get a new name every time this script is run
-        job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
-                                        "_" + cf["start_timestamp"] + "_cooklog" )
-        job_results_log_csv_path  = job_results_log_file_base + ".csv"
-        job_results_log_json_path  = job_results_log_file_base + ".json"
-
-        with open(job_results_log_csv_path, 'w', newline='') as file:
-            fieldnames = log_l[0].keys()
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(log_l)
-        
-        with open(job_results_log_json_path, 'w') as file:
-            json.dump(log_l, file, indent=2)
-
-        print(ins+"Processing list written to log file.")
     else:
-        job_results_log_json_path = None
-    
-    return job_results_log_json_path
+        # Conversion may be necessary if object passed in was a ListProxy instead of
+        # plain list.
+        # This step has been known to cause problems with multiprocessing, especially
+        # with items rapidly or many items being updated concurrently.  If we can't 
+        # convert to a list, no problem.  
+        log_l = None
+        try:
+            log_l = list(tried_l)
+        except Exception as e:
+            print(ins + "High volume IPC prevented immediate logging of this item.")
+            print(ins + "(This item will still be included in log eventually.)")
+
+        # If we got a log list, write it out
+        if log_l is not None:
+            # Results files get a new name every time this script is run
+            job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
+                                            "_" + cf["start_timestamp"] + "_cooklog" )
+            job_results_log_csv_path  = job_results_log_file_base + ".csv"
+            job_results_log_json_path  = job_results_log_file_base + ".json"
+
+            with open(job_results_log_csv_path, 'w', newline='') as file:
+                fieldnames = log_l[0].keys()
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(log_l)
+            
+            with open(job_results_log_json_path, 'w') as file:
+                json.dump(log_l, file, indent=2)
+
+            print(ins+"Processing list written to log file.")
+        else:
+            job_results_log_json_path = None
+        
+        return job_results_log_json_path
 
 
 def cleanup_media(cf, item):
@@ -265,6 +270,8 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         help="Just acquire the media listed in the batch definition file.")
     parser.add_argument("--show-docker-cmd", action="store_true",
         help="Display the `docker run` command (for CLI apps) or the URL (for webservice apps) for the CLAMS run.")
+    parser.add_argument("-x", "--no-log", action="store_true",
+        help="Do not create cooklogs for this run.")
 
     args = parser.parse_args()
 
@@ -292,6 +299,11 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         cli_show_docker_command = True
     else:
         cli_show_docker_command = False
+
+    if args.no_log:
+        cli_no_log = True
+    else:
+        cli_no_log = False
 
     ############################################################################
     # Process info in the job config file to set up this job.
@@ -440,6 +452,13 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             cf["just_get_media"] = bool(conffile["just_get_media"])
         else:
             cf["just_get_media"] = False
+        
+        if cli_no_log:
+            cf["no_log"] = True
+        elif "no_log" in conffile:
+            cf["no_log"] = bool(conffile["no_log"])
+        else:
+            cf["no_log"] = False
 
         if "start_after_item" in conffile:
             if isinstance(conffile["start_after_item"], int) and conffile["start_after_item"] >  0:
@@ -559,9 +578,6 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             clams["show_docker_command"] = bool(conffile["show_docker_command"])
         else:
             clams["show_docker_command"] = False
-
-
-         
 
         # Each app specified as a Docker image can be run with the "--gpus" flag set to a 
         # particular value.
@@ -789,7 +805,10 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     seconds = (tn-t0).seconds
     print("Shutting down clams-kitchen at", tn.strftime("%Y-%m-%d %H:%M:%S"))
     print("Total elapsed time:", days, "days,", seconds, "seconds")
-    print(f'Results logged in {job_results_log_json_path}')
+    if job_results_log_json_path:
+        print(f'Results logged in {job_results_log_json_path}')
+    else:
+        print(f'No cooklog created for this job.')
     print()
 
 
