@@ -1,0 +1,17 @@
+version: '3'
+services:
+  ck: &ck
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ck
+  dev:
+    <<: *ck
+    tty: true
+    stdin_open: true
+    volumes:
+      - .:/app
+    command: ["bash"]
+    
+  
+  
