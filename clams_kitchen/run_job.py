@@ -1198,11 +1198,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 if len(clams["param_sets"][clamsi]) > 0:
                     app_params = []
                     for p in clams["param_sets"][clamsi]:
-                        if type(clams["param_sets"][clamsi][p]) != dict:
-                            # parameter is not nested; just add it
-                            app_params.append( "--" + p )
-                            app_params.append( str(clams["param_sets"][clamsi][p]) )
-                        else:
+                        if type(clams["param_sets"][clamsi][p]) == dict:
                             # parameter is a dictionary; break it into separately
                             # specified parameters
                             for mkey in clams["param_sets"][clamsi][p]:
@@ -1210,6 +1206,16 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                                 mvalue = clams["param_sets"][clamsi][p][mkey]
                                 paramvalue = f"{mkey}:{mvalue}"
                                 app_params.append( paramname + "=" + paramvalue )
+                        elif type(clams["param_sets"][clamsi][p]) == list:
+                            # add a parameter for each item in the list
+                            for paramvalue in clams["param_sets"][clamsi][p]:
+                                paramname = "--" + p 
+                                app_params.append( paramname + "=" + paramvalue )
+                        else:
+                            # parameter is not complex; just add it
+                            app_params.append( "--" + p )
+                            app_params.append( str(clams["param_sets"][clamsi][p]) )
+
 
                     # Work-around to delimit values passed with --map flag:
                     # Add a dummy flag
