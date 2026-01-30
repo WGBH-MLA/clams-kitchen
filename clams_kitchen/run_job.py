@@ -239,6 +239,44 @@ def cleanup_media(cf, item):
 # HTTP mode helper functions
 ############################################################################
 
+def get_docker_command_prefix() -> tuple:
+    """Get Docker binary path and command prefix based on OS.
+    
+    Returns:
+        Tuple of (docker_bin_path, coml_prefix)
+    """
+    current_os = platform.system()
+    if current_os == "Windows":
+        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
+        coml_prefix = ["bash"]
+    elif current_os == "Linux":
+        docker_bin_path = "/usr/bin/docker"
+        coml_prefix = []
+    else:
+        raise OSError(f"Unsupported operating system: {current_os}")
+    
+    return docker_bin_path, coml_prefix
+
+
+def add_volume_mounts(coml: list, cf: dict) -> list:
+    """Add standard volume mounts to Docker command.
+    
+    Args:
+        coml: Docker command list to append to
+        cf: Configuration dictionary with volume mount paths
+        
+    Returns:
+        Updated command list
+    """
+    if cf["media_required"]:
+        coml += ["-v", cf["shell_media_dir"] + '/:/data']
+    if cf["shell_cache_dir"]:
+        coml += ["-v", cf["shell_cache_dir"] + '/:/cache']
+    if cf["shell_config_dir"]:
+        coml += ["-v", cf["shell_config_dir"] + '/:/app/config']
+    return coml
+
+
 def build_query_string(params: dict) -> str:
     """Build URL query string from parameters, supporting complex types.
 
@@ -290,15 +328,7 @@ def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
     Returns:
         Tuple of (container_id, host_port, container_name)
     """
-    current_os = platform.system()
-    if current_os == "Windows":
-        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
-        coml_prefix = ["bash"]
-    elif current_os == "Linux":
-        docker_bin_path = "/usr/bin/docker"
-        coml_prefix = []
-    else:
-        raise OSError(f"Unsupported operating system: {current_os}")
+    docker_bin_path, coml_prefix = get_docker_command_prefix()
 
     # Extract container name from image (last path component + tag)
     # Example: "ghcr.io/clamsproject/app-swt-detection:v8.4" -> "app-swt-detection:v8.4"
@@ -316,12 +346,9 @@ def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
         "-v", cf["shell_mmif_dir"] + '/:/mmif'
     ]
 
-    if cf["media_required"]:
-        coml += ["-v", cf["shell_media_dir"] + '/:/data']
-    if cf["shell_cache_dir"]:
-        coml += ["-v", cf["shell_cache_dir"] + '/:/cache']
-    if cf["shell_config_dir"]:
-        coml += ["-v", cf["shell_config_dir"] + '/:/app/config']
+    # Add standard volume mounts
+    coml = add_volume_mounts(coml, cf)
+    
     if gpus:
         coml += ["--gpus", gpus]
 
@@ -393,15 +420,7 @@ def stop_clams_http_container(container_id: str) -> None:
     Args:
         container_id: Docker container ID
     """
-    current_os = platform.system()
-    if current_os == "Windows":
-        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
-        coml_prefix = ["bash"]
-    elif current_os == "Linux":
-        docker_bin_path = "/usr/bin/docker"
-        coml_prefix = []
-    else:
-        raise OSError(f"Unsupported operating system: {current_os}")
+    docker_bin_path, coml_prefix = get_docker_command_prefix()
 
     # Stop the container (--rm flag will auto-remove it)
     stop_cmd = coml_prefix + [docker_bin_path, "stop", container_id]
@@ -429,15 +448,7 @@ def capture_container_logs(container_id: str, output_prefix: str,
         {output_prefix}.out - Container stdout (gunicorn access logs, app output)
         {output_prefix}.err - Container stderr (gunicorn errors, warnings)
     """
-    current_os = platform.system()
-    if current_os == "Windows":
-        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
-        coml_prefix = ["bash"]
-    elif current_os == "Linux":
-        docker_bin_path = "/usr/bin/docker"
-        coml_prefix = []
-    else:
-        raise OSError(f"Unsupported operating system: {current_os}")
+    docker_bin_path, coml_prefix = get_docker_command_prefix()
 
     # Build docker logs command with time window
     logs_cmd = coml_prefix + [
@@ -1397,19 +1408,11 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
                 print(ins + "Sending request to a CLAMS web service at " + endpoint)
 
-                if len(clams["param_sets"][clamsi]) > 0:
-                    # build querystring with parameters in job configuration
-                    qsp = "?"
-                    for p in clams["param_sets"][clamsi]:
-                        qsp += p
-                        qsp += "="
-                        qsp += str(clams["param_sets"][clamsi][p])
-                        qsp += "&"
-                    qsp = qsp[:-1] # remove trailing "&"
-                else:
-                    qsp = ""
-
-                uri = endpoint + qsp
+                # Build query string with parameters (supports dict, list, and simple params)
+                params = clams["param_sets"][clamsi]
+                query_string = build_query_string(params)
+                uri = endpoint + query_string
+                
                 if clams["show_docker_command"]:
                     print(ins + uri) 
 
@@ -1530,16 +1533,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 input_mmif_filename = item["mmif_files"][mmifi-1]
                 output_mmif_filename = mmif_filename
 
-                # Set the environment-specific path to Docker and Windows-specific additions
-                current_os = platform.system()
-                if current_os == "Windows":
-                    docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
-                    coml_prefix = ["bash"]
-                elif current_os == "Linux":
-                    docker_bin_path = "/usr/bin/docker"
-                    coml_prefix = []
-                else:
-                    raise OSError(f"Unsupported operating system: {current_os}")
+                # Get Docker binary path and command prefix
+                docker_bin_path, coml_prefix = get_docker_command_prefix()
 
                 # build shell command as list for `subprocess.run()`
                 coml = [
@@ -1550,12 +1545,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         "-v",
                         cf["shell_mmif_dir"] + '/:/mmif'
                     ]
-                if cf["media_required"]:
-                    coml += [ "-v", cf["shell_media_dir"] + '/:/data' ]
-                if cf["shell_cache_dir"]:
-                    coml += [ "-v", cf["shell_cache_dir"] + '/:/cache' ]
-                if cf["shell_config_dir"]:
-                    coml += [ "-v", cf["shell_config_dir"] + '/:/app/config' ]
+                
+                # Add standard volume mounts
+                coml = add_volume_mounts(coml, cf)
+                
                 if "gpus" in clams["apps"][clamsi]:
                     coml += [ "--gpus", clams["apps"][clamsi]["gpus"] ]
                 coml += [
