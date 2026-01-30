@@ -82,6 +82,7 @@ import platform
 import csv
 import json
 import datetime
+from datetime import timezone
 import time
 import re
 import warnings
@@ -91,6 +92,7 @@ import multiprocessing as mp
 import logging
 import importlib.metadata
 import traceback
+from urllib.parse import quote
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -231,6 +233,238 @@ def cleanup_media(cf, item):
         removed = remove_media(item["media_path"])
         if removed:
             print(ins + "Media removed.")
+
+
+############################################################################
+# HTTP mode helper functions
+############################################################################
+
+def build_query_string(params: dict) -> str:
+    """Build URL query string from parameters, supporting complex types.
+
+    Converts parameter dictionary to URL query string format:
+    - Dict params: ?tfLabelMap=B:bars&tfLabelMap=S:slate
+    - List params: ?tfDynamicSceneLabels=credits&tfDynamicSceneLabels=other+text
+    - Simple params: ?pretty=true&tpModelBatchSize=40
+
+    Args:
+        params: Dictionary of parameter names to values
+
+    Returns:
+        Query string starting with '?' or empty string if no params
+    """
+    if not params:
+        return ""
+
+    parts = []
+    for key, value in params.items():
+        if isinstance(value, dict):
+            # Dictionary parameter: expand to multiple key=subkey:subvalue pairs
+            for mkey, mvalue in value.items():
+                encoded_value = quote(f"{mkey}:{mvalue}", safe='')
+                parts.append(f"{key}={encoded_value}")
+        elif isinstance(value, list):
+            # List parameter: expand to multiple key=item pairs
+            for item in value:
+                encoded_value = quote(str(item), safe='')
+                parts.append(f"{key}={encoded_value}")
+        else:
+            # Simple parameter: single key=value pair
+            encoded_value = quote(str(value), safe='')
+            parts.append(f"{key}={encoded_value}")
+
+    return "?" + "&".join(parts)
+
+
+def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
+    """Start a CLAMS app container as an HTTP server.
+
+    The container runs Flask in debug mode (app.py --debug) for full logging.
+    Container is intended to be reused across all batch items.
+
+    Args:
+        image: Docker image name
+        cf: Configuration dictionary with volume mount paths
+        gpus: GPU configuration (e.g., "all") or None
+
+    Returns:
+        Tuple of (container_id, host_port, container_name)
+    """
+    current_os = platform.system()
+    if current_os == "Windows":
+        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
+        coml_prefix = ["bash"]
+    elif current_os == "Linux":
+        docker_bin_path = "/usr/bin/docker"
+        coml_prefix = []
+    else:
+        raise OSError(f"Unsupported operating system: {current_os}")
+
+    # Extract container name from image (last path component + tag)
+    # Example: "ghcr.io/clamsproject/app-swt-detection:v8.4" -> "app-swt-detection:v8.4"
+    image_parts = image.split('/')
+    container_name = image_parts[-1]
+
+    # Build docker run command for HTTP server mode
+    coml = [
+        docker_bin_path,
+        "run",
+        "-d",                    # Detached mode
+        "--rm",                  # Remove on stop
+        "--name", container_name,  # Named container for easy identification
+        "-p", "5000",            # Expose port 5000 (Docker assigns host port)
+        "-v", cf["shell_mmif_dir"] + '/:/mmif'
+    ]
+
+    if cf["media_required"]:
+        coml += ["-v", cf["shell_media_dir"] + '/:/data']
+    if cf["shell_cache_dir"]:
+        coml += ["-v", cf["shell_cache_dir"] + '/:/cache']
+    if cf["shell_config_dir"]:
+        coml += ["-v", cf["shell_config_dir"] + '/:/app/config']
+    if gpus:
+        coml += ["--gpus", gpus]
+
+    # Add image and entry point for Flask debug server
+    coml.append(image)
+    coml += ["python", "app.py", "--debug"]
+
+    coml = coml_prefix + coml
+
+    # Start the container
+    result = subprocess.run(coml, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to start container: {result.stderr}")
+
+    container_id = result.stdout.strip()
+
+    # Get the assigned host port
+    port_cmd = coml_prefix + [docker_bin_path, "port", container_id, "5000"]
+    result = subprocess.run(port_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # Cleanup and raise
+        subprocess.run(coml_prefix + [docker_bin_path, "stop", container_id],
+                       capture_output=True)
+        raise RuntimeError(f"Failed to get container port: {result.stderr}")
+
+    # Parse port from output like "0.0.0.0:49153" or ":::49153"
+    port_str = result.stdout.strip().split(":")[-1]
+    host_port = int(port_str)
+
+    return container_id, host_port, container_name
+
+
+def wait_for_container_ready(port: int, timeout: int = 120, interval: float = 2.0) -> bool:
+    """Wait for the CLAMS HTTP server to be ready.
+
+    Args:
+        port: Host port mapped to container's port 5000
+        timeout: Maximum seconds to wait
+        interval: Seconds between polling attempts
+
+    Returns:
+        True when ready
+
+    Raises:
+        TimeoutError: If server not ready within timeout
+    """
+    start_time = time.time()
+    url = f"http://localhost:{port}/"
+
+    while time.time() - start_time < timeout:
+        try:
+            # Try a simple GET request to check if server is up
+            response = requests.get(url, timeout=5)
+            # Any response (even 405 Method Not Allowed) means server is up
+            return True
+        except requests.exceptions.ConnectionError:
+            # Server not ready yet
+            time.sleep(interval)
+        except requests.exceptions.Timeout:
+            # Server not responding
+            time.sleep(interval)
+
+    raise TimeoutError(f"Container HTTP server not ready after {timeout} seconds")
+
+
+def stop_clams_http_container(container_id: str) -> None:
+    """Stop and remove a CLAMS HTTP server container.
+
+    Args:
+        container_id: Docker container ID
+    """
+    current_os = platform.system()
+    if current_os == "Windows":
+        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
+        coml_prefix = ["bash"]
+    elif current_os == "Linux":
+        docker_bin_path = "/usr/bin/docker"
+        coml_prefix = []
+    else:
+        raise OSError(f"Unsupported operating system: {current_os}")
+
+    # Stop the container (--rm flag will auto-remove it)
+    stop_cmd = coml_prefix + [docker_bin_path, "stop", container_id]
+    result = subprocess.run(stop_cmd, capture_output=True, text=True)
+
+    # Don't raise on error - container might already be stopped
+    if result.returncode != 0:
+        print(f"Warning: Container stop returned non-zero: {result.stderr}")
+
+
+def capture_container_logs(container_id: str, output_prefix: str,
+                           start_time: str, end_time: str) -> None:
+    """Capture container logs for a specific time window.
+
+    Uses docker logs with --since and --until flags to capture stdout/stderr
+    from the container during request processing.
+
+    Args:
+        container_id: Docker container ID
+        output_prefix: Base path for output files (without extension)
+        start_time: ISO timestamp for --since flag
+        end_time: ISO timestamp for --until flag
+
+    Output files:
+        {output_prefix}.out - Container stdout (gunicorn access logs, app output)
+        {output_prefix}.err - Container stderr (gunicorn errors, warnings)
+    """
+    current_os = platform.system()
+    if current_os == "Windows":
+        docker_bin_path = "/mnt/c/Program Files/Docker/Docker/resources/bin/docker"
+        coml_prefix = ["bash"]
+    elif current_os == "Linux":
+        docker_bin_path = "/usr/bin/docker"
+        coml_prefix = []
+    else:
+        raise OSError(f"Unsupported operating system: {current_os}")
+
+    # Build docker logs command with time window
+    logs_cmd = coml_prefix + [
+        docker_bin_path, "logs",
+        "--since", start_time,
+        "--until", end_time,
+        container_id
+    ]
+
+    result = subprocess.run(logs_cmd, capture_output=True, text=True)
+
+    # Write stdout if present
+    if result.stdout:
+        stdout_path = f"{output_prefix}.out"
+        with open(stdout_path, "w") as f:
+            f.write(result.stdout)
+        print(f"    Container stdout saved to: {stdout_path}")
+
+    # Write stderr if present
+    if result.stderr:
+        stderr_path = f"{output_prefix}.err"
+        with open(stderr_path, "w") as f:
+            f.write(result.stderr)
+        print(f"    Container stderr saved to: {stderr_path}")
+
+    if not result.stdout and not result.stderr:
+        print("    No container logs captured for this request.")
 
 
 ############################################################################
@@ -598,6 +832,14 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
                 if "image" in app and "gpus" not in app:
                     app["gpus"] = "all"
 
+        # Validate and set mode for each app (CLI or HTTP)
+        for app in clams["apps"]:
+            if "image" in app:
+                if "mode" not in app:
+                    app["mode"] = "cli"  # default for backward compatibility
+                elif app["mode"] not in ["cli", "http"]:
+                    raise RuntimeError(f"Invalid CLAMS app mode: {app['mode']}. Must be 'cli' or 'http'.")
+
         # Set flag for whether to save content of stderr from CLAMS CLI
         if "clams_save_cli_stderr" in conffile:
             if conffile["clams_save_cli_stderr"]:
@@ -607,8 +849,14 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         else:
             clams["save_cli_stderr"] = True
 
+        # Set flag for whether to save HTTP mode container logs
+        if "clams_save_http_logs" in conffile:
+            clams["save_http_logs"] = bool(conffile["clams_save_http_logs"])
+        else:
+            clams["save_http_logs"] = False
+
         # If there is a condition requiring saving messages, define the directory
-        if clams["save_cli_stderr"]:
+        if clams["save_cli_stderr"] or clams["save_http_logs"]:
             cf["messages_dir"] = results_dir + "/" + "messages"
         else:
             cf["messages_dir"] = None
@@ -726,6 +974,43 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
 
     ############################################################################
+    # HTTP Mode Container Setup
+    
+    # Initialize container state for HTTP mode apps
+    clams["http_containers"] = {}  # {stage_index: {"container_id": str, "port": int, "image": str, "name": str}}
+    
+    # Start all HTTP mode containers before processing items
+    for clamsi, app in enumerate(clams["apps"]):
+        if app.get("mode") == "http" and "image" in app:
+            image = app["image"]
+            gpus = app.get("gpus")
+
+            print()
+            print(f"Starting HTTP container for stage {clamsi}: {image}")
+
+            try:
+                container_id, port, container_name = start_clams_http_container(image, cf, gpus)
+                print(f"Container '{container_name}' (ID: {container_id[:12]}) started on port {port}")
+
+                print("Waiting for HTTP server to be ready...")
+                wait_for_container_ready(port, timeout=120)
+                print("HTTP server is ready.")
+
+                clams["http_containers"][clamsi] = {
+                    "container_id": container_id,
+                    "port": port,
+                    "image": image,
+                    "name": container_name
+                }
+            except Exception as e:
+                print(f"Failed to start HTTP container: {e}")
+                # Stop any containers that were started
+                for info in clams["http_containers"].values():
+                    stop_clams_http_container(info["container_id"])
+                raise
+
+
+    ############################################################################
     # Main loop or processing pool
 
     # The `tried_l` variable is the main data structure for recording results of the run.  
@@ -733,42 +1018,51 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     # In MP mode, it is a `Manager.list`.  In serial mode, it is a plain list.
     tried_l = []
 
-    if cf["parallel"] == 0:
-        print(f'Will process items serially.')
-        print()
-        print("About to start cooking...")
-        print()
-        for batch_item in batch_l:
-            run_item( batch_item, cf, clams, post_procs, tried_l, None) 
+    try:
+        if cf["parallel"] == 0:
+            print(f'Will process items serially.')
+            print()
+            print("About to start cooking...")
+            print()
+            for batch_item in batch_l:
+                run_item( batch_item, cf, clams, post_procs, tried_l, None) 
 
-    else:
-        print(f'Will process {cf["parallel"]} items in parallel.')
-        if cf["stagger"] > 0:
-            print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s.')
-        print()
-        print("About to start cooking...")
-        print()
+        else:
+            print(f'Will process {cf["parallel"]} items in parallel.')
+            if cf["stagger"] > 0:
+                print(f'Will stagger start of initial {cf["parallel"]} items by {cf["stagger"]}s.')
+            print()
+            print("About to start cooking...")
+            print()
 
-        with mp.Manager() as manager:
-            # The `tried_l` variable will be an object shared by processes, so each process 
-            # can append records to it.
-            tried_l = manager.list()
-            l_lock = manager.Lock()
+            with mp.Manager() as manager:
+                # The `tried_l` variable will be an object shared by processes, so each process 
+                # can append records to it.
+                tried_l = manager.list()
+                l_lock = manager.Lock()
 
-            # Collection of items returned from each run.  Should have the same items as 
-            # tried_l, after the end of the run.
-            # (Not currently used.)
-            end_l = []
-            
-            # Distribute the job to the specified number of worker processes
-            # (`chunksize=1` ensures processing in order, to the extent possible.)
-            with mp.Pool(cf["parallel"]) as pool:
-                end_l = pool.starmap( run_item, 
-                                      [ (batch_item, cf, clams, post_procs, tried_l, l_lock) 
-                                        for batch_item in batch_l ], 
-                                      chunksize=1 )
-            # convert `tried_l` to a normal list
-            tried_l = list(tried_l)
+                # Collection of items returned from each run.  Should have the same items as 
+                # tried_l, after the end of the run.
+                # (Not currently used.)
+                end_l = []
+                
+                # Distribute the job to the specified number of worker processes
+                # (`chunksize=1` ensures processing in order, to the extent possible.)
+                with mp.Pool(cf["parallel"]) as pool:
+                    end_l = pool.starmap( run_item, 
+                                          [ (batch_item, cf, clams, post_procs, tried_l, l_lock) 
+                                            for batch_item in batch_l ], 
+                                          chunksize=1 )
+                # convert `tried_l` to a normal list
+                tried_l = list(tried_l)
+
+    finally:
+        # Stop all HTTP mode containers after batch processing
+        for clamsi, info in clams.get("http_containers", {}).items():
+            print()
+            print(f"Stopping HTTP container for stage {clamsi}: {info['name']}")
+            stop_clams_http_container(info["container_id"])
+            print(f"Container stopped.")
 
     # End of main loop or processing pool
     ############################################################################
@@ -1149,9 +1443,86 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                         raise Exception("Tried to write MMIF, but failed.")
                     print(ins + "MMIF file created.")
 
+            elif "image" in clams["apps"][clamsi] and clams["apps"][clamsi].get("mode") == "http":
+                ################################################################
+                # Run CLAMS app via HTTP request to pre-started container
+                
+                # Get container info (started at batch level)
+                container_info = clams["http_containers"].get(clamsi)
+                if not container_info:
+                    raise RuntimeError(f"HTTP container for stage {clamsi} not found")
+
+                container_id = container_info["container_id"]
+                port = container_info["port"]
+                image = container_info["image"]
+
+                print(ins + f"Sending request to CLAMS HTTP server: {image} (port {port})")
+
+                # Build endpoint URL with query parameters
+                params = clams["param_sets"][clamsi]
+                query_string = build_query_string(params)
+                uri = f"http://localhost:{port}/" + query_string
+
+                if clams["show_docker_command"]:
+                    print(ins + f"POST {uri}")
+
+                # Read input MMIF
+                with open(item["mmif_paths"][mmifi-1], "r") as file:
+                    mmif_str = file.read()
+
+                # Record start time for log capture
+                log_start_time = datetime.datetime.now(timezone.utc).isoformat()
+
+                # Send POST request with MMIF as body
+                headers = {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+
+                try:
+                    response = requests.post(uri, headers=headers, data=mmif_str, timeout=600)
+                except requests.exceptions.Timeout:
+                    print(ins + "Request timed out after 600 seconds.")
+                    item["errors"].append(f"HTTP timeout for {image}")
+                    clams_failed = True
+                    continue
+                except Exception as e:
+                    print(ins + f"Request failed: {e}")
+                    item["errors"].append(f"HTTP error for {image}: {str(e)}")
+                    clams_failed = True
+                    continue
+
+                # Record end time for log capture
+                log_end_time = datetime.datetime.now(timezone.utc).isoformat()
+
+                print(ins + f"HTTP response code: {response.status_code}")
+
+                # Handle response
+                if response.status_code >= 200 and response.status_code < 300:
+                    mmif_str = response.text
+                    print(ins + "CLAMS app finished successfully.")
+                else:
+                    mmif_str = response.text
+                    print(ins + f"Warning: Non-2xx response code: {response.status_code}")
+                    if response.status_code == 500:
+                        mmif_path += "500"
+
+                # Write output MMIF file
+                if mmif_str:
+                    with open(mmif_path, "w") as file:
+                        num_chars = file.write(mmif_str)
+                    if num_chars < len(mmif_str):
+                        raise Exception("Tried to write MMIF, but failed.")
+                    print(ins + "MMIF file created.")
+
+                # Optionally capture container logs for this request
+                if clams.get("save_http_logs") and cf.get("messages_dir"):
+                    log_prefix = f'{cf["messages_dir"]}/{item["asset_id"]}_CLAMS-{clamsi}_http'
+                    capture_container_logs(container_id, log_prefix, log_start_time, log_end_time)
+
             elif "image" in clams["apps"][clamsi]:
                 ################################################################
-                # Run CLAMS app by running the Docker image
+                # Run CLAMS app by running the Docker image (CLI mode)
                 image = clams["apps"][clamsi]["image"]
 
                 print(ins + "Attempting to run a CLAMS Docker image: " + image)
