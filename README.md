@@ -89,9 +89,34 @@ A boolean indicating whether to call Docker with GPU (CUDA) enabled.
 
 As an alternative to `clams_run_cli`, `clams_images`, `clams_endpoints`, and `docker_gpus_all`, you can create a list of dictionaries representing a pipeline of CLAMS apps.  Each item in the list must have a key named either `"image"` or `"endpoint"` and the relevant Docker image or web service endpoint as the value.  Each item may also have a key `"gpus"` indicating whe the value of the `gpus` parameter passed to Docker (overiding any value set by `docker_gpus_all` above).  Typically, to use GPU, its value is set to `"all"`.
 
+For apps specified with `"image"`, you can also specify a `"mode"` key with value `"cli"` or `"http"`:
+
+- **`"cli"` mode** (default): Starts a new Docker container for each batch item, runs the app via CLI, then stops the container. This is the traditional behavior.
+
+- **`"http"` mode**: Starts a Docker container once at the beginning of batch processing, sends HTTP POST requests to process each item, then stops the container after all items are processed. This mode dramatically improves throughput for GPU-accelerated apps with large model loading times, as models are loaded only once per batch rather than once per item.
+
+Example:
+```json
+{
+  "clams_apps": [
+    {
+      "image": "ghcr.io/clamsproject/app-swt-detection:v8.4",
+      "mode": "http",
+      "gpus": "all"
+    }
+  ]
+}
+```
+
 #### `clams_params`
 
 A list of dictionaries of parameters and values to be passed to the CLAMS apps.  Each item in this list corresponds to an item in the list of CLAMS apps given by `clams_images`, `clams_endpoints`, or `clams_apps` above.
+
+In HTTP mode, parameters are passed as URL query string parameters. Dictionary and list parameters are automatically expanded (e.g., `{"tfLabelMap": {"B": "bars"}}` becomes `?tfLabelMap=B:bars`).
+
+#### `clams_save_http_logs`
+
+Optional boolean (default: `false`). When `true`, captures container logs (stdout/stderr) for each HTTP request and saves them to the `messages/` directory. Useful for debugging HTTP mode apps. Log files are named like `{asset_id}_CLAMS-{stage}_http.out` and `{asset_id}_CLAMS-{stage}_http.err`.
 
 #### `post_proc`
 
