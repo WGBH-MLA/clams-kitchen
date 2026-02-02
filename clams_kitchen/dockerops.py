@@ -113,7 +113,7 @@ def build_base_docker_command(image: str, cf: dict, gpus: str = None,
 def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
     """Start a CLAMS app container as an HTTP server.
 
-    The container runs Flask in debug mode (app.py --debug) for full logging.
+    The container runs Flask in debug mode (app.py) for full logging.
     Container is intended to be reused across all batch items.
 
     Args:
@@ -126,10 +126,9 @@ def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
     """
     docker_bin_path, coml_prefix = get_docker_command_prefix()
 
-    # Extract container name from image (last path component + tag)
-    # Example: "ghcr.io/clamsproject/app-swt-detection:v8.4" -> "app-swt-detection:v8.4"
-    image_parts = image.split('/')
-    container_name = image_parts[-1]
+    # Extract container name from image (last path component w/o tag)
+    # Example: "ghcr.io/clamsproject/app-swt-detection:v8.4" -> "app-swt-detection"
+    container_name = image.split('/')[-1].split(':')[0]
 
     # Build base docker command using shared function
     coml = build_base_docker_command(image=image, cf=cf, gpus=gpus,
@@ -138,7 +137,7 @@ def start_clams_http_container(image: str, cf: dict, gpus: str = None) -> tuple:
                                      publish_port="5000")
 
     # Add HTTP mode entrypoint
-    coml += ["python", "app.py", "--debug"]
+    coml += ["python", "app.py"]
 
     # Start the container
     result = subprocess.run(coml, capture_output=True, text=True)
@@ -178,7 +177,7 @@ def wait_for_container_ready(port: int, timeout: int = 120, interval: float = 2.
         TimeoutError: If server not ready within timeout
     """
     start_time = time.time()
-    url = f"http://localhost:{port}/"
+    url = f"http://127.0.0.1:{port}/"
 
     while time.time() - start_time < timeout:
         try:
