@@ -62,28 +62,5 @@ def mmif_check ( mmif_path:str , complain:bool=False) -> List[str]:
 
 
 def make_blank_mmif (media_filename:str, mime:str) -> str:
-    global template_json
-    new_json = template_json.replace("XXfilenameXX", media_filename)
-    new_json = new_json.replace("XXmimetypeXX", mime)
-
-    return new_json
-
-template_json="""{
-  "metadata": {
-  "mmif": "http://mmif.clams.ai/1.0.4"
-  }, 
-  "documents": [
-    {
-      "@type": "http://mmif.clams.ai/vocabulary/VideoDocument/v1", 
-      "properties": {
-        "mime": "XXmimetypeXX", 
-        "id": "m1", 
-        "location": "file:///data/XXfilenameXX"
-      }
-    }
-  ], 
-  "views": []
-}"""
-
-
-# %%
+    from mmif.utils.cli import source
+    return source.generate_source_mmif_from_file([f"{mime}:{media_filename}"], prefix='/data')
