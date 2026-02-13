@@ -142,7 +142,7 @@ def update_tried( item, cf, tried_l, l_lock):
     print(ins+"Recording this item in the list of tried items.")
 
     if l_lock is not None:
-        print(ins+f"Worker {os.getpid()} received lock: {l_lock}") # DIAG
+        print(ins+f"Worker {os.getpid()} will try lock: {l_lock}") # DIAG
         with l_lock: 
             print(ins+f"Worker {os.getpid()} acquired lock: {l_lock}") # DIAG
             tried_l.append(item)
@@ -838,6 +838,10 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
     item_header += f'{ins}* * *  ITEM # {item["item_num"]} of {cf["end_after_item"]}  * {item["asset_id"]} [ {cf["job_name"]} ] {tis}\n'
     item_header += f'{ins}  *  '
     print(item_header)
+
+    if cf["parallel"]:
+        print(ins)
+        print(ins+f"Worker process ID is {os.getpid()}.")
 
     # Set empty values for data elements not provided
     if "sonyci_id" not in item:
