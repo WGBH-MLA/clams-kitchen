@@ -182,34 +182,41 @@ def make_avail(guid:str, ci_id:str, media_dir_path:str, opfx:str="") -> str:
     
     # Since files can be large (up to 700MB) better to write it to disk as we go.
     success = False
-    with requests.get(ci_url, stream=True) as response:
-        if response.status_code == 200:
-            global temp_suffix
-            tempfilepath = filepath + temp_suffix
-            with open(tempfilepath, 'wb') as file:
-                # Iterate over the response in chunks
-                bytes_saved = 0
-                try:
-                    for chunk in response.iter_content(chunk_size=8388608): 
-                        if chunk:  # filter out zero bye keep-alive chunks
-                            file.write(chunk)
-                            bytes_saved += len(chunk)
-                        if bytes_saved >= BYTES_LIMIT:
-                            print(opfx + "Warning: Received more than limit of", BYTES_LIMIT, "bytes.")
-                            print(opfx + "Stopping the download.  File may be truncated.")
-                            break
-                    print(opfx + "Downloading finished.", bytes_saved, "bytes saved.")
-                    success = True
-                except Exception as e:
-                    print(opfx + "Download unsuccessful:", e)
-            if success:
-                if os.path.exists(filepath):
-                    print(opfx + "Warning:  File exists at", filepath)
-                    print(opfx + "Leaving existing file in place.")
-                else:
-                    os.rename(tempfilepath, filepath)
-        else:
-            print(opfx + "Download attempt failed.  Status code: ", response.status_code)
+    try:
+        with requests.get(ci_url, stream=True, timeout=(5, 30)) as response:
+            if response.status_code == 200:
+                global temp_suffix
+                tempfilepath = filepath + temp_suffix
+
+                with open(tempfilepath, 'wb') as file:
+                    # Iterate over the response in chunks
+                    bytes_saved = 0
+                    try:
+                        for chunk in response.iter_content(chunk_size=8388608): 
+                            if chunk:  # filter out zero bye keep-alive chunks
+                                file.write(chunk)
+                                bytes_saved += len(chunk)
+                            if bytes_saved >= BYTES_LIMIT:
+                                print(opfx + "Warning: Received more than limit of", BYTES_LIMIT, "bytes.")
+                                print(opfx + "Stopping the download.  File may be truncated.")
+                                break
+                        print(opfx + "Downloading finished.", bytes_saved, "bytes saved.")
+                        success = True
+
+                    except Exception as e:
+                        # catch read timeouts and other errors mid-stream
+                        print(opfx + "Download unsuccessful:", e)
+
+                if success:
+                    os.replace(tempfilepath, filepath)
+            else:
+                print(opfx + "Download attempt failed.  Status code: ", response.status_code)
+    
+    except requests.exceptions.RequestException as e:
+        # catch connection errors, DNS failures, etc. occurring during the requests.get()
+        print(opfx + "Request failed immediately:", e)
+    except Exception as e:
+        print(opfx + "Download unsuccessful:", e)
 
     if success:
         return filename
