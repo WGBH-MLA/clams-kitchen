@@ -99,6 +99,7 @@ logging.basicConfig(
 
 # Import installed modules
 import requests
+from tzlocal import get_localzone_name
 
 # Import local modules
 from . import runlog_sum
@@ -1178,6 +1179,8 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                 coml = [
                         docker_bin_path, 
                         "run",
+                        "-e",
+                        f"TZ={get_localzone_name()}",
                         "-i",
                         "--rm",
                         "-v",
@@ -1295,7 +1298,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
             update_tried( item, cf, tried_l, l_lock)
             return item
         else:
-            print(ins + "Step prerequisites passed.")
+            print(ins + "Prerequisites passed.")
 
         # Loop throug and run each post processing procedure that has been listed.
         for post_proc in post_procs:

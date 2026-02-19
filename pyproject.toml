@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clams-kitchen"
-version = "0.59"
+version = "0.60"
 description = "Python routines for cooking recipes with CLAMS"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 dependencies = [
     "requests>=2.31.0",
-    "mmif-python>=1.1.2"
+    "mmif-python>=1.1.2",
+    "tzlocal>=5.3.1"
 ]
 
 [project.scripts]
