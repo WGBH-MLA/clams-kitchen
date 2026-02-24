@@ -66,9 +66,13 @@ def print_summary(tried_l):
             print(f" #{item['item_num']}:\t{item['asset_id']}\tProblems: {item['problems']}")
 
 
-def print_skipped_list(tried_l):
-    skips = [item for item in tried_l if item["skip_reason"] not in [""]]
+def print_lists(tried_l):
+    errors = [item for item in tried_l if len(item["errors"]) > 0 ] 
+    print()
+    print("Job item numbers of items with errors:")
+    print( [item['item_num'] for item in errors] )
 
+    skips = [item for item in tried_l if item["skip_reason"] not in [""]]
     print()
     print("Job item numbers of items skipped:")
     print( [item['item_num'] for item in skips] )
@@ -138,8 +142,8 @@ def main():
         help="Print just a simple summary, not the full summary")
     parser.add_argument("-i", "--infos", action="store_true",
         help="Print infos about any items that have it.")
-    parser.add_argument("--list-skipped", action="store_true",
-        help="Print a list of job item numbers for items skipped during the job.")
+    parser.add_argument("-l", "--list", action="store_true",
+        help="Print lists of job item numbers for items with errors and items skipped during the job.")
     parser.add_argument("--consec", action="store_true",
         help="Print the range of item item numbers consecutively attempted (useful for restarting aborted jobs)")
     parser.add_argument("logfile", metavar="COOKLOG",
@@ -169,8 +173,8 @@ def main():
     if args.infos:
         print_infos(tried_l)
 
-    if args.list_skipped:
-        print_skipped_list(tried_l)
+    if args.list:
+        print_lists(tried_l)
 
     if args.consec:
         print_consec(tried_l)
