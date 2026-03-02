@@ -417,8 +417,10 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         # `config_dir` is optional and is always relative to the `shell_base`
         if "config_dir" in conffile:
             cf["shell_config_dir"] = shell_base + conffile["config_dir"]
+            cf["config_dir"] = local_base + conffile["config_dir"]
         else:
             cf["shell_config_dir"] = None
+            cf["config_dir"] = None
 
         # `results_dir` is required
         results_dir = local_base + conffile["results_dir"]
