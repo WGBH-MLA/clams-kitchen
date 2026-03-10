@@ -190,17 +190,17 @@ def write_tried_log(item, cf, tried_l):
             # Results files get a new name every time this script is run
             job_results_log_file_base = ( cf["logs_dir"] + "/" + cf["job_id"] + 
                                             "_" + cf["start_timestamp"] + "_cooklog" )
-            job_results_log_csv_path  = job_results_log_file_base + ".csv"
-            job_results_log_json_path  = job_results_log_file_base + ".json"
-
-            with open(job_results_log_csv_path, 'w', newline='') as file:
-                fieldnames = log_l[0].keys()
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(log_l)
             
+            job_results_log_json_path  = job_results_log_file_base + ".json"            
             with open(job_results_log_json_path, 'w') as file:
                 json.dump(log_l, file, indent=2)
+
+            # job_results_log_csv_path  = job_results_log_file_base + ".csv"
+            # with open(job_results_log_csv_path, 'w', newline='') as file:
+            #     fieldnames = log_l[0].keys()
+            #     writer = csv.DictWriter(file, fieldnames=fieldnames)
+            #     writer.writeheader()
+            #     writer.writerows(log_l)
 
             print(ins+"Processing list written to log file.")
         else:
