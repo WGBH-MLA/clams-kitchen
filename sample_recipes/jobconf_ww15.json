@@ -30,7 +30,7 @@
   "post_procs": [
     {
       "name": "transcript_converter",
-      "artifacts": ["transcript_mmif", "tpme_mmif", "transcript_aajson", "tpme_aajson", "transcript_text", "tpme_text"]
+      "artifacts": ["transcript_mmif", "transcript_aajson", "tpme_aajson"]
     }
   ]
 }
