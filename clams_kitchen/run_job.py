@@ -13,7 +13,6 @@ with the corresponding jobconf file key in brackets.
    - start_timestamp (str)
    - job_id (str)                        ["id"]
    - job_name (str)                      ["name"]
-   - logs_dir (str)
    - no_log (str)                        ["no_log"]    
    - just_get_media (bool)               ["just_get_media"]
    - media_required (bool)               ["media_required"]
@@ -24,14 +23,9 @@ with the corresponding jobconf file key in brackets.
    - keep_mmifs (list of ints)           ["keep_mmifs"]
    - cleanup_media_per_item (bool)       ["cleanup_media_per_item"]
    - cleanup_beyond_item (int)           ["cleanup_beyond_item"]
+   - cleanup_mmif (bool)                 ["cleanup_mmif"]
    - parallel (int)                      ["parallel"]
    - stagger (int)                       ["stagger"]
-   - artifacts_dir (str)
-   - media_dir (str)
-   - shell_media_dir (str)
-   - shell_cache_dir (str)
-   - mmif_dir (str)
-   - shell_mmif_dir (str)
 
 `clams` - CLAMS-specific configuration dictionary. The values are set by the 
 job configuration file.  It has the following keys:
@@ -224,14 +218,37 @@ def cleanup_media(cf, item):
     if not cf["media_required"]:
         print(ins + "Job declared media was not required.  Will not attempt to clean up media.")
     elif not cf["cleanup_media_per_item"]:
-        print(ins + "Cleanup not enabled.  Will not attempt to clean up media.")  
+        print(ins + "Media cleanup not enabled.  Will not attempt to clean up media.")  
     elif not item["cleanup_eligible"]:
-        print(ins + "Item not eligible for cleanup.  Leaving media for this item.")  
+        print(ins + "Item not eligible for media cleanup.  Leaving media for this item.")  
     else:
         print(ins + "Attempting to remove media at", item["media_path"])
         removed = remove_media(item["media_path"])
         if removed:
             print(ins + "Media removed.")
+
+
+def cleanup_mmif(cf, item):
+    """Cleanup MMIF files created during the processing of this item.
+    (Do the cleanup only if it is permitted by the configuration settings!)
+    """
+    
+    # shorthand item number string for screen output
+    ins = f'[#{item["item_num"]}] '
+
+    print(ins)
+    print(ins + '# CLEANING UP MMIF files')
+
+    # Decide whether to clean up, and output informative messages
+
+    if not cf["cleanup_mmif"]:
+        print(ins + "MMIF cleanup not enabled.  Will not attempt to clean up MMIF files.")  
+    else:
+        for i, f in enumerate(item["mmif_paths"]):
+            removed = remove_media( f )
+            if removed:
+                print(ins + f"MMIF _{i} removed.")
+
 
 
 ############################################################################
@@ -243,7 +260,7 @@ def main():
     # get the time when the job began
     t0 = datetime.datetime.now()
     print()
-    print(f'Starting up clams-kitchen (verion {__version__}) at {t0.strftime("%Y-%m-%d %H:%M:%S")}')
+    print(f'Starting up clams-kitchen (version {__version__}) at {t0.strftime("%Y-%m-%d %H:%M:%S")}')
 
     ############################################################################
     # Handle command line arguments
@@ -262,7 +279,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     parser.add_argument("recipe", metavar="RECIPE",
         help="Path for the recipe -- a JSON job configuration file")
     parser.add_argument("batch_def_path", metavar="DEFLIST", nargs="?",
-        help="Path for batch definition list -- the CSV file listing the items to be processed.")
+        help="Path for batch definition file -- a single media file or a CSV file listing items to be processed.")
     parser.add_argument("job_id", metavar="JOBID", nargs="?",
         help="An identifer string for the job; no spaces allowed")
     parser.add_argument("job_name", metavar="JOBNAME", nargs="?",
@@ -278,8 +295,21 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
     job_conf_path = args.recipe
 
+    # basic validation of job conf filepath
+    if not os.path.exists(job_conf_path):
+        parser.error(f"The path '{job_conf_path}' does not exist.")
+    if not os.path.isfile(job_conf_path):
+        parser.error(f"The path '{job_conf_path}' is not a valid file.")
+
     if args.batch_def_path is not None:
         cli_batch_def_path = args.batch_def_path
+
+        # basic validation of batch definition filepath
+        if not os.path.exists(cli_batch_def_path):
+            parser.error(f"The path '{cli_batch_def_path}' does not exist.")
+        if not os.path.isfile(cli_batch_def_path):
+            parser.error(f"The path '{cli_batch_def_path}' is not a valid file.")
+
     else:
         cli_batch_def_path = None
 
@@ -380,7 +410,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         if "local_base" in conffile:
             local_base = conffile["local_base"]
         else:
-            local_base = ""
+            local_base = "./"
 
         # Set the shell_base 
         # (May either match or diverge from local_base)
@@ -396,51 +426,100 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         if cli_batch_def_path is not None:
             batch_def_path = cli_batch_def_path
         else:
-            #  `def_path` is required if not specified on the command line
+            # `def_path` is required if not specified on the command line
             batch_def_path = local_base + conffile["def_path"]
 
-        # `media_dir` is required unless media is not required        
+        # if media is required, `media_dir` defaults to (a subdirectory of) `local_base`
         if "media_required" in conffile:
             cf["media_required"] = conffile["media_required"]
         else:
             cf["media_required"] = True
         if cf["media_required"] or "media_dir" in conffile:
-            cf["media_dir"] = local_base + conffile["media_dir"]
-            cf["shell_media_dir"] = shell_base + conffile["media_dir"]
+            if "media_dir" in conffile:
+                media_dir = conffile["media_dir"]
+            else:
+                media_dir = ""
+            if media_dir[:1] == "/":
+                # absolute path to media dir
+                cf["media_dir"] = cf["shell_media_dir"] = media_dir
+            else:
+                # relative path to media dir
+                cf["media_dir"] = local_base + media_dir
+                cf["shell_media_dir"] = shell_base + media_dir
         
-        # `cache_dir` is optional and is always relative to the `shell_base`
+        # `cache_dir` is optional 
+        # It is relative to the `shell_base` unless it begins with a slash.
         if "cache_dir" in conffile:
-            cf["shell_cache_dir"] = shell_base + conffile["cache_dir"]
+            if conffile["cache_dir"][:1] == "/":
+                # absolute path for cache directory
+                cf["shell_cache_dir"] = conffile["cache_dir"]
+            else:
+                # relative path for cache directory
+                cf["shell_cache_dir"] = shell_base + conffile["cache_dir"]
         else:
             cf["shell_cache_dir"] = None
 
-        # `config_dir` is optional and is always relative to the `shell_base`
+        # `config_dir` is optional 
+        # It is relative to the `shell_base` unless it begins with a slash.
         if "config_dir" in conffile:
-            cf["shell_config_dir"] = shell_base + conffile["config_dir"]
-            cf["config_dir"] = local_base + conffile["config_dir"]
+            if conffile["config_dir"][:1] == "/":
+                # absolute path 
+                cf["shell_config_dir"] = cf["config_dir"] = conffile["config_dir"]
+            else:
+                # relative path 
+                cf["shell_config_dir"] = shell_base + conffile["config_dir"]
+                cf["config_dir"] = local_base + conffile["config_dir"]
         else:
-            cf["shell_config_dir"] = None
-            cf["config_dir"] = None
+            cf["shell_config_dir"] = cf["config_dir"] = None
+            
 
-        # `results_dir` is required
-        results_dir = local_base + conffile["results_dir"]
-        shell_results_dir = shell_base + conffile["results_dir"]
+        # `results_dir` 
+        if "results_dir" in conffile:
+            rd = conffile["results_dir"]
+        else:
+            rd = "."
+        if rd[:1] == "/":
+            # absolute path 
+            results_dir = shell_results_dir = rd    
+        else:
+            # relative path 
+            results_dir = local_base + rd
+            shell_results_dir = shell_base + rd
+
+        if "flat_dir" in conffile:
+            cf["flat_dir"] = conffile["flat_dir"]
+        else:
+            cf["flat_dir"] = False
 
         # If `mmif_dir` is not specified, create it and put it in the `results_dir`
         if "mmif_dir" in conffile:
-            cf["mmif_dir"] = local_base + conffile["mmif_dir"]
-            cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
+            if conffile["mmif_dir"][:1] == "/":
+                # absolute path
+                cf["mmif_dir"] = cf["shell_mmif_dir"] = conffile["mmif_dir"]
+            else:
+                # relative path
+                cf["mmif_dir"] = local_base + conffile["mmif_dir"]
+                cf["shell_mmif_dir"] = shell_base + conffile["mmif_dir"]
+        elif cf["flat_dir"]:
+            cf["mmif_dir"] = results_dir
+            cf["shell_mmif_dir"] = shell_results_dir
         else:
-            cf["mmif_dir"] = results_dir + "/mmif"
-            cf["shell_mmif_dir"] = shell_results_dir + "/mmif"
+            cf["mmif_dir"] = results_dir + "/" + "mmif"
+            cf["shell_mmif_dir"] = shell_results_dir + "/" + "mmif"
+
 
         # If `logs_dir` is not specified, just use `results_dir`
         if "logs_dir" in conffile:
-            cf["logs_dir"] = local_base + conffile["logs_dir"]
+            if conffile["logs_dir"][:1] == "/":
+                # absolute path
+                cf["logs_dir"] = conffile["logs_dir"]
+            else:
+                # relative path
+                cf["logs_dir"] = local_base + conffile["logs_dir"]
         else:
             cf["logs_dir"] = results_dir
 
-        # Checks to make sure directories and setup file exist
+        # Checks to make sure pre-existing directories and setup file exist
         for dirpath in [results_dir, cf["logs_dir"], batch_def_path]:
             if not os.path.exists(dirpath):
                 raise FileNotFoundError("Path does not exist: " + dirpath)
@@ -515,6 +594,11 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             cf["cleanup_beyond_item"] = conffile["cleanup_beyond_item"]
         else:
             cf["cleanup_beyond_item"] = 0
+
+        if "cleanup_mmif" in conffile:
+            cf["cleanup_mmif"] = bool(conffile["cleanup_mmif"])
+        else:
+            cf["cleanup_mmif"] = False
 
         if "filter_warnings" in conffile:
             warnings.filterwarnings(conffile["filter_warnings"])
@@ -612,7 +696,17 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
         # If there is a condition requiring saving messages, define the directory
         if clams["save_cli_stderr"]:
-            cf["messages_dir"] = results_dir + "/" + "messages"
+            if "messages_dir" in conffile:
+                if conffile["messages_dir"][:1] == "/":
+                    # absolute path
+                    cf["messages_dir"] = conffile["messages_dir"]
+                else:
+                    # relative path
+                    cf["messages_dir"] = local_base + conffile["messages_dir"]
+            elif cf["flat_dir"]:
+                    cf["messages_dir"] = results_dir
+            else:
+                 cf["messages_dir"] = results_dir + "/" + "messages"
         else:
             cf["messages_dir"] = None
 
@@ -636,7 +730,10 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
         if len(post_procs) > 0:
             # directory for all artifacts (not including MMIF files)
-            cf["artifacts_dir"] = results_dir + "/" + "artifacts"
+            if cf["flat_dir"]:
+                cf["artifacts_dir"] = results_dir
+            else:
+                cf["artifacts_dir"] = results_dir + "/" + "artifacts"
         else:
             cf["artifacts_dir"] = None
 
@@ -668,7 +765,10 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     # Check and/or create directories for job output
 
     # Create list of dirs to create/validate
-    dirs = [ cf["mmif_dir"] ]
+    dirs = [  ]
+
+    if cf["mmif_dir"]:
+        dirs.append(cf["mmif_dir"])
 
     if cf["messages_dir"]:
         dirs.append(cf["messages_dir"]) 
@@ -680,8 +780,9 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
             if "artifacts" in post_proc and len(post_proc["artifacts"]) > 0:
                 # subdirectories for types of artifacts
                 for arttype in post_proc["artifacts"]:
-                    artdir = cf["artifacts_dir"] + "/" + arttype
-                    dirs.append(artdir)
+                    if not cf["flat_dir"]:
+                        artdir = cf["artifacts_dir"] + "/" + arttype
+                        dirs.append(artdir)
 
     # Checks to make sure these directories exist
     # If directories do not exist, then create them
@@ -696,36 +797,57 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     ############################################################################
     # Configure batch
 
-    # Open the batch spreadsheet as a list of dictionaries
-    # (But we'll restrict this list based on the configuration.)
-    with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
-        batch_l = list(csv.DictReader(csvfile))
-
-    # Add a human-readable item index to the batch list
-    # (This will be used for filtering and logging.)
-    for index, item in enumerate(batch_l, start=1):
-        item["item_num"] = index
-
-    # Re-set last item according to the length of the batch list
-    if cf["end_after_item"] is None:
-        cf["end_after_item"] = len(batch_l)
-    elif cf["end_after_item"] < cf["start_after_item"]:
-        cf["end_after_item"] = cf["start_after_item"]
-    elif cf["end_after_item"] > len(batch_l):
-        cf["end_after_item"] = len(batch_l)
-
-    # restrict the batch to the appropriate range
-    batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
-
-    # Filter the batch just to specified items (if specified)
-    if cf["include_only_items"] is not None:
-        batch_l = [ item for item in batch_l if item["item_num"] in cf["include_only_items"] ]
-
     print()
-    print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
-    if cf["include_only_items"] is not None:
-        print(f'Will omit all items except those specified: {cf["include_only_items"]}.')
-    print("Total items:", len(batch_l))
+    
+    _ , batch_def_ext = os.path.splitext(batch_def_path)
+    batch_def_ext = batch_def_ext.lower()
+
+    if batch_def_ext == '.csv':
+        print("Setting up job in batch mode.")
+        
+        # Open the batch spreadsheet as a list of dictionaries
+        # (But we'll restrict this list based on the configuration.)
+        with open(batch_def_path, encoding='utf-8', newline='') as csvfile:
+            batch_l = list(csv.DictReader(csvfile))
+
+        # Add a human-readable item index to the batch list
+        # (This will be used for filtering and logging.)
+        for index, item in enumerate(batch_l, start=1):
+            item["item_num"] = index
+
+        # Re-set last item according to the length of the batch list
+        if cf["end_after_item"] is None:
+            cf["end_after_item"] = len(batch_l)
+        elif cf["end_after_item"] < cf["start_after_item"]:
+            cf["end_after_item"] = cf["start_after_item"]
+        elif cf["end_after_item"] > len(batch_l):
+            cf["end_after_item"] = len(batch_l)
+
+        # restrict the batch to the appropriate range
+        batch_l = batch_l[cf["start_after_item"]:cf["end_after_item"]]
+
+        # Filter the batch just to specified items (if specified)
+        if cf["include_only_items"] is not None:
+            batch_l = [ item for item in batch_l if item["item_num"] in cf["include_only_items"] ]
+        print(f'Starting with item # {cf["start_after_item"]+1} and ending after item # {cf["end_after_item"]}.')
+        if cf["include_only_items"] is not None:
+            print(f'Will omit all items except those specified: {cf["include_only_items"]}.')
+        print("Total items:", len(batch_l))
+    
+    else:
+        print("Setting up job in single item mode.")
+
+        _, media_filename = os.path.split(batch_def_path)
+
+        item = {}
+        # `asset_id` will be the fileanme
+        item["asset_id"], _ = os.path.splitext(media_filename)
+        item["media_filename"] = media_filename
+        item["item_num"] = 1
+
+        batch_l = [ item ]
+        cf["end_after_item"] = 1
+
 
 
     ############################################################################
@@ -1381,6 +1503,7 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
 
     # Clean up
     cleanup_media(cf, item)
+    cleanup_mmif(cf, item)
 
     # Update results to reflect this iteration of the loop
     update_tried( item, cf, tried_l, l_lock)
