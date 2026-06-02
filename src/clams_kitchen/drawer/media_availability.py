@@ -9,23 +9,12 @@ import requests
 import time
 import platform
 
+from .ci_url import get_ci_media_url, SonyCiError
 
 # Limit for the size of the files that will be downloaded
 # About 1500MB.  That's roughly 4.5hrs for AAPB standard proxy.
 # Things are weird if we're receiving more than that.
 BYTES_LIMIT = 1500000000 
-
-
-# location of helper bash script
-script_dir = os.path.dirname(os.path.realpath(__file__))
-ci_url_sh_path = os.path.join(script_dir, 'bash_aux', 'ci_url.sh')
-
-# confirm ci_url is accessible via bash (which is what will call it).
-command = "[ -f " + ci_url_sh_path + " ] && echo exists || echo missing "
-ci_url_exists = subprocess.run([ 'bash', '-c', command ], capture_output=True, text=True)
-result = ci_url_exists.stdout.strip()
-if result != "exists":
-    raise FileNotFoundError("Path to ci_url does not exist: " + ci_url_sh_path)
 
 temp_suffix = ".PARTIAL"
 
@@ -33,6 +22,9 @@ temp_suffix = ".PARTIAL"
 def extract_filename_ci_url(url:str, ci_id:str, opfx) -> str:
 
     #print("URL: <", url, ">") # DIAG
+    if url is None:
+        print(opfx + f"Failure: No SonyCi URL received.")
+        return None
 
     start_index = url.find("cpb-aacip")
     if start_index == -1:
@@ -111,20 +103,18 @@ def make_avail(guid:str, ci_id:str, media_dir_path:str, opfx:str="") -> str:
 
     If a string value is given for opfx, then that will be a prefix to any output
     """
-    global ci_url_sh_path
-
     print(opfx + "About to get Ci URL for Ci ID:", ci_id) # DIAG
 
     retries = 2
     for attempt in range(retries+1):
-        ci_url_result = subprocess.run([ 'bash', 
-                                        ci_url_sh_path, 
-                                        ci_id ], 
-                                       capture_output=True, text=True)
 
-        # Remove whitespace and quotation marks (which I've notice in output)
-        ci_url = ci_url_result.stdout.strip().replace('"', '')
-        if ci_url == "null":
+        try:
+            ci_url = get_ci_media_url(ci_id)
+        except SonyCiError as e:
+            print(opfx + f"Error fetching Sony Ci URL: {e}")
+            ci_url = None
+
+        if ci_url is None:
             if attempt == retries:
                 print(opfx + "Failure: `ci_url.sh` returned no URL for " + ci_id)
                 return None
@@ -159,7 +149,7 @@ def make_avail(guid:str, ci_id:str, media_dir_path:str, opfx:str="") -> str:
 
     # sanity check comparison between guid and filename
     if ci_filename[10:18] != guid[10:18]:
-        print(opfx + "Warning: `ci_url.sh` for guid " + guid + " returned " + ci_filename)
+        print(opfx + "Warning: `ci_url` for guid " + guid + " returned " + ci_filename)
 
     # use normalized media filename instead of whatever name is in SonyCi
     filename = "cpb-aacip-" + guid[10:] + "." + ci_filename_ext
