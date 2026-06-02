@@ -13,6 +13,7 @@ with the corresponding jobconf file key in brackets.
    - start_timestamp (str)
    - job_id (str)                        ["id"]
    - job_name (str)                      ["name"]
+   - flat_dir (bool)                     ["flat_dir"]
    - no_log (str)                        ["no_log"]    
    - just_get_media (bool)               ["just_get_media"]
    - media_required (bool)               ["media_required"]
@@ -804,6 +805,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
 
     if batch_def_ext == '.csv':
         print("Setting up job in batch mode.")
+        cf["batch"] = True
         
         # Open the batch spreadsheet as a list of dictionaries
         # (But we'll restrict this list based on the configuration.)
@@ -836,6 +838,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     
     else:
         print("Setting up job in single item mode.")
+        cf["batch"] = False
 
         _, media_filename = os.path.split(batch_def_path)
 
@@ -858,7 +861,14 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     # In MP mode, it is a `Manager.list`.  In serial mode, it is a plain list.
     tried_l = []
 
-    if cf["parallel"] == 0:
+    if not cf["batch"]:
+        print(f'Will process single item.')
+        print()
+        print("About to start cooking...")
+        print()
+        run_item( batch_l[0], cf, clams, post_procs, tried_l, None)        
+
+    elif cf["parallel"] == 0:
         print(f'Will process items serially.')
         print()
         print("About to start cooking...")

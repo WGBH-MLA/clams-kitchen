@@ -1,1 +1,1 @@
-recursive-include clams_kitchen/drawer/bash_aux *
+recursive-include src/clams_kitchen/drawer/bash_aux *

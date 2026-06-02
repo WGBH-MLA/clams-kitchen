@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clams-kitchen"
-version = "0.63"
-description = "Python routines for cooking recipes with CLAMS"
+version = "0.64"
+description = "Python routines for cooking with CLAMS"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.8"
-license = {file = "LICENSE"}
 dependencies = [
     "requests>=2.31.0",
     "mmif-python>=1.1.2",
@@ -23,5 +23,8 @@ cookreview = "clams_kitchen.runlog_sum:main"
 "Homepage" = "https://github.com/WGBH-MLA/clams-kitchen"
 "Source" = "https://github.com/WGBH-MLA/clams-kitchen"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
-include = ["clams_kitchen"]
+where = ["src"]
