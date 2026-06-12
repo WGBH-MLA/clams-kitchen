@@ -472,7 +472,18 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
                 cf["config_dir"] = local_base + conffile["config_dir"]
         else:
             cf["shell_config_dir"] = cf["config_dir"] = None
-            
+
+        # `prompts_dir` is optional 
+        # It is relative to the `local_base` unless it begins with a slash.
+        if "prompts_dir" in conffile:
+            if conffile["prompts_dir"][:1] == "/":
+                # absolute path 
+                cf["prompts_dir"] = conffile["prompts_dir"]
+            else:
+                # relative path 
+                cf["prompts_dir"] = local_base + conffile["prompts_dir"]
+        else:
+            cf["prompts_dir"] = None
 
         # `results_dir` 
         if "results_dir" in conffile:
