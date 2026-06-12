@@ -582,6 +582,11 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         else:
             cf["include_only_items"] = None
 
+        if "use_old_mmif_template" in conffile:
+            cf["use_old_mmif_template"] = bool(conffile["use_old_mmif_template"])
+        else:
+            cf["use_old_mmif_template"] = False
+
         if "overwrite_mmif" in conffile:
             cf["overwrite_mmif"] = bool(conffile["overwrite_mmif"])
         else:
@@ -1160,7 +1165,9 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
                     " is `" + item["media_type"] + "`." )
                 print(ins + "Using 'video' as the MIME type." )
                 mime = "video"
-            mmif_str = make_blank_mmif(item["media_filename"], mime)
+            mmif_str = make_blank_mmif( item["media_filename"], 
+                                        mime, 
+                                        use_old_mmif_template=cf["use_old_mmif_template"] )
 
             with open(mmif_path, "w") as file:
                 num_chars = file.write(mmif_str)
@@ -1169,7 +1176,6 @@ def run_item( batch_item, cf, clams, post_procs, tried_l, l_lock) :
         
         mmif_status = mmif_check(mmif_path)
         if 'blank' in mmif_status:
-            print(ins + "Blank MMIF file successfully created.")
             item["mmif_files"].append(mmif_filename)
             item["mmif_paths"].append(mmif_path)
         else:

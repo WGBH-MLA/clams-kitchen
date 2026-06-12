@@ -8,6 +8,24 @@ from mmif.utils.cli import source
 
 from typing import List
 
+hard_template_json="""{
+  "metadata": {
+  "mmif": "http://mmif.clams.ai/1.2.0"
+  }, 
+  "documents": [
+    {
+      "@type": "http://mmif.clams.ai/vocabulary/VideoDocument/v1", 
+      "properties": {
+        "mime": "XXmimetypeXX", 
+        "id": "d1", 
+        "location": "file:///data/XXfilenameXX"
+      }
+    }
+  ], 
+  "views": []
+}
+"""
+
 # %%
 # Define functions
 
@@ -62,10 +80,17 @@ def mmif_check ( mmif_path:str , complain:bool=False) -> List[str]:
 
 
 
-def make_blank_mmif (media_filename:str, mime:str) -> str:
+def make_blank_mmif( media_filename:str, 
+                     mime:str,
+                     use_old_mmif_template:bool=False ) -> str:
 
-    blank_mmif = source.generate_source_mmif_from_file( [f"{mime}:{media_filename}"], 
-                                                        prefix='/data' )
+    if use_old_mmif_template: 
+        new_json = hard_template_json.replace("XXfilenameXX", media_filename)
+        blank_mmif = new_json.replace("XXmimetypeXX", mime)
+    
+    else:
+        blank_mmif = source.generate_source_mmif_from_file( [f"{mime}:{media_filename}"], 
+                                                            prefix='/data' )
 
     return blank_mmif
 
