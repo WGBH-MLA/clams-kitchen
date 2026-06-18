@@ -285,6 +285,8 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         help="An identifer string for the job; no spaces allowed")
     parser.add_argument("job_name", metavar="JOBNAME", nargs="?",
         help="A human-readable name for the job; may include spaces; not valid without a JOBID")
+    parser.add_argument("--start-after-item", nargs="?",
+        help="Start cooking batch after this item number (where items are numbered from 1)")
     parser.add_argument("--just-get-media", action="store_true",
         help="Just acquire the media listed in the batch definition file.")
     parser.add_argument("--show-docker-cmd", action="store_true",
@@ -324,6 +326,18 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
     else:
         cli_job_id = None
         cli_job_name = None
+
+    if args.start_after_item:
+        try: 
+            cli_start_after_item = int(args.start_after_item)
+        except:
+            parser.error(f"Invalid value for `--start-after-item`.")
+            cli_start_after_item = None
+        if cli_start_after_item < 0:
+            parser.error(f"Value of `--start-after-item` must be greater than 0.")
+            cli_start_after_item = None
+    else:
+        cli_start_after_item = None
 
     cli_just_get_media = args.just_get_media
 
@@ -554,10 +568,14 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         else:
             cf["no_log"] = False
 
-        if "start_after_item" in conffile:
+
+        if cli_start_after_item:
+            cf["start_after_item"] = cli_start_after_item
+        elif "start_after_item" in conffile:
             if isinstance(conffile["start_after_item"], int) and conffile["start_after_item"] >  0:
                 cf["start_after_item"] = conffile["start_after_item"]
             else:
+                print("Warning: Invalid value for 'start_after_item'.  Will start cooking at the beginning.")
                 cf["start_after_item"] = 0
         else:
             cf["start_after_item"] = 0
@@ -577,7 +595,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
                 cf["include_only_items"] = None
             else:
                 beg = cf["start_after_item"] if cf["start_after_item"] else 0
-                end = cf["end_after_item"] if cf["end_after_item"] else 999999
+                end = cf["end_after_item"] if cf["end_after_item"] else 9999999
                 cf["include_only_items"] = [i for i in conffile["include_only_items"] if i>beg and i<=end ]
         else:
             cf["include_only_items"] = None
