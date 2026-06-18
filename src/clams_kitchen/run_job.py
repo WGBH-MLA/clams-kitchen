@@ -572,7 +572,7 @@ Performs CLAMS processing and post-processing in a loop as specified in a recipe
         if cli_start_after_item:
             cf["start_after_item"] = cli_start_after_item
         elif "start_after_item" in conffile:
-            if isinstance(conffile["start_after_item"], int) and conffile["start_after_item"] >  0:
+            if isinstance(conffile["start_after_item"], int) and conffile["start_after_item"] >=  0:
                 cf["start_after_item"] = conffile["start_after_item"]
             else:
                 print("Warning: Invalid value for 'start_after_item'.  Will start cooking at the beginning.")
